@@ -60,6 +60,8 @@ export async function ask(selection, trigger = { id: 'ask' }) {
   }
   const source = findPostSource(selection.node);
   const prompt = renderTemplate(ctx.template, { text, url: source.url, author: source.author });
+  // Lets InputHistory tell the quoted material apart from what you type.
+  emit('askInsert', { text, url: source.url, author: source.author });
   busy = true;
   try {
     const result = selection.context === 'grok'

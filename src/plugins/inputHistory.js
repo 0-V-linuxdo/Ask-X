@@ -5,6 +5,7 @@
 // small counter sits on the box; click it to search and pick from the list.
 // ⌥ + ↑ / ↓ always browses, wherever the caret is.
 
+import { on } from '../api/events.js';
 import { definePlugin, definePluginSettings, OptionType } from '../api/plugins.js';
 import { app } from '../app.js';
 import { findButton, isPrivateOn, readValue, writeEditable, writeTextarea } from '../drawer.js';
@@ -32,6 +33,12 @@ const settings = definePluginSettings({
     max: MAX_MAX,
     default: 100
   },
+  promptOnly: {
+    type: OptionType.BOOLEAN,
+    label: '只记录提示词',
+    description: '去掉引用的原文（> 开头的行）、来源链接等 Ask X 写进去的内容，只保存你自己写的提示词。只有引用、没写提示词时不记录。',
+    default: true
+  },
   skipPrivate: {
     type: OptionType.BOOLEAN,
     label: '无痕对话不记录',
@@ -57,11 +64,62 @@ const settings = definePluginSettings({
 // Browsing state (one composer at a time).
 let cursor = -1; // index into entries while browsing, -1 = not browsing
 let draft = '';
+let head = ''; // the quote block kept at the top while browsing
 let shown = null; // the text we last put into the box
 let field = null;
 const recent = new Map();
 
 export const normalize = (text) => String(text ?? '').replace(/​/g, '').replace(/\r\n?/g, '\n').replace(/\s+$/u, '');
+
+// Quotes Ask X wrote into the box lately: { text, url, author }.
+const inserted = [];
+let offInsert = null;
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A line Ask X wrote, whatever the template: a "> " quote line, a line that
+// is only a link (with a short label such as 来源：), or the quoted author.
+function isQuoteLine(line, quotes) {
+  if (/^\s*>/.test(line)) return true;
+  if (/^\s*(\S{0,12}[:：]\s*)?https?:\/\/\S+\s*$/u.test(line)) return true;
+  return quotes.some((q) => q.author && new RegExp(`^\\s*(\\S{0,12}[:：]\\s*)?@?${escapeRe(String(q.author).replace(/^@/, ''))}\\s*$`).test(line));
+}
+
+// Your own words from a message: drops the selection Ask X quoted into it
+// (also when the template does not mark it with ">") and every quote line.
+export function promptOnly(text, quotes = inserted) {
+  let value = normalize(text);
+  for (const q of quotes) {
+    if (q.text && q.text.length > 1) value = value.split(q.text).join('\u0000');
+  }
+  // A line that held only the selection (maybe after a label like 原文：) goes.
+  const lines = value.split('\n')
+    .filter((line) => !isQuoteLine(line, quotes) && !/^\s*(\S{0,12}[:：]\s*)?\u0000[\s\u0000]*$/u.test(line))
+    .map((line) => line.replace(/\u0000/g, ''));
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// The box as { head, body }: head is the quote block at the top (source,
+// quote lines, the selection, blank lines), body what follows it.
+export function splitQuote(text, quotes = inserted) {
+  const value = String(text ?? '');
+  const lines = value.split('\n');
+  let n = 0;
+  let seen = false;
+  while (n < lines.length) {
+    const line = lines[n];
+    const trimmed = line.trim();
+    const quoted = isQuoteLine(line, quotes) || (trimmed && quotes.some((q) => q.text && q.text.includes(trimmed)));
+    if (!quoted && trimmed) break;
+    if (quoted) seen = true;
+    n += 1;
+  }
+  if (!seen) return { head: '', body: value };
+  const head = lines.slice(0, n).join('\n');
+  const rest = lines.slice(n).join('\n');
+  // Keep the blank lines that separate quote and prompt in the head.
+  return n >= lines.length ? { head: value.replace(/\n*$/u, '\n\n'), body: '' } : { head: `${head}\n`, body: rest };
+}
 
 export function entries() {
   return settings.store.entries;
@@ -78,6 +136,15 @@ export function pushEntry(text, now = Date.now()) {
   const max = Math.min(MAX_MAX, Math.max(MAX_MIN, settings.store.maxEntries));
   settings.store.entries = list.slice(-max);
   return true;
+}
+
+// Entries saved before "只记录提示词" was on carry their quotes: keep only
+// the prompt of each, drop the ones that were all quote.
+export function cleanEntries() {
+  const list = entries();
+  // The newest copy of a repeated prompt keeps its place.
+  const clean = [...new Set(list.map((e) => promptOnly(e, [])).filter((e) => e.trim()).reverse())].reverse();
+  if (clean.length !== list.length || clean.some((e, i) => e !== list[i])) settings.store.entries = clean;
 }
 
 function removeEntry(index) {
@@ -135,6 +202,7 @@ export function step(area, older) {
   if (cursor < 0) {
     if (!older) return false;
     draft = readValue(area);
+    head = settings.store.promptOnly ? splitQuote(draft).head : '';
     cursor = list.length;
   }
   const next = older ? cursor - 1 : cursor + 1;
@@ -146,7 +214,7 @@ export function step(area, older) {
   }
   cursor = next;
   field = area;
-  setText(area, list[next], older);
+  setText(area, head + list[next], older);
   showHud(area, `${next + 1} / ${list.length}`);
   return true;
 }
@@ -168,10 +236,17 @@ function aroundCaret(area, before) {
   return range.toString();
 }
 
+// The start of the box, or with a quote at the top, the start of what
+// follows it.
 function atStart(area) {
-  if (area.tagName === 'TEXTAREA') return area.selectionStart === 0 && area.selectionEnd === 0;
+  const top = settings.store.promptOnly ? splitQuote(readValue(area)).head : '';
+  const squash = (s) => s.replace(/[\s\u200B]/g, '');
+  if (area.tagName === 'TEXTAREA') {
+    if (area.selectionStart !== area.selectionEnd) return false;
+    return area.selectionStart === 0 || (Boolean(top) && squash(area.value.slice(0, area.selectionStart)) === squash(top));
+  }
   const text = aroundCaret(area, true);
-  return text !== null && !text.replace(/\u200B/g, '');
+  return text !== null && (!squash(text) || (Boolean(top) && squash(text) === squash(top)));
 }
 
 function atEnd(area) {
@@ -190,7 +265,7 @@ function skip(area) {
 }
 
 function capture(area) {
-  if (!skip(area)) pushEntry(readValue(area));
+  if (!skip(area)) pushEntry(settings.store.promptOnly ? promptOnly(readValue(area)) : readValue(area));
   stopBrowsing();
 }
 
@@ -210,7 +285,8 @@ function onKeyDown(event) {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   if (event.shiftKey || event.metaKey || event.ctrlKey) return;
   const older = event.key === 'ArrowUp';
-  const empty = !readValue(area).trim();
+  const value = readValue(area);
+  const empty = !(settings.store.promptOnly ? splitQuote(value).body : value).trim();
   const edge = older ? atStart(area) || empty : atEnd(area) && cursor >= 0;
   if (!event.altKey && !edge) return;
   if (!step(area, older)) return;
@@ -325,9 +401,12 @@ function openPicker(doc) {
   const use = (text, index) => {
     close();
     if (!area?.isConnected) return;
-    if (cursor < 0) draft = readValue(area);
+    if (cursor < 0) {
+      draft = readValue(area);
+      head = settings.store.promptOnly ? splitQuote(draft).head : '';
+    }
     cursor = index;
-    setText(area, text, false);
+    setText(area, head + text, false);
     area.focus();
     showHud(area, `${index + 1} / ${entries().length}`);
   };
@@ -380,13 +459,23 @@ export default definePlugin({
       style.textContent = CSS;
       (doc.head || doc.documentElement).appendChild(style);
     }
+    if (settings.store.promptOnly) cleanEntries();
+    offInsert = on('askInsert', (quote) => {
+      inserted.push(quote);
+      if (inserted.length > 20) inserted.shift();
+    });
     doc.addEventListener('keydown', onKeyDown, true);
     doc.addEventListener('input', onInput, true);
     doc.addEventListener('click', onClick, true);
     doc.addEventListener('focusout', onFocusOut, true);
   },
+  onSettingsChange() {
+    if (settings.store.promptOnly) cleanEntries();
+  },
   stop() {
     const doc = app.doc;
+    offInsert?.();
+    offInsert = null;
     doc.removeEventListener('keydown', onKeyDown, true);
     doc.removeEventListener('input', onInput, true);
     doc.removeEventListener('click', onClick, true);

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.22.1
-// @update-log   [20261102] v1.22.1 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.23.0
+// @update-log   [20261102] v1.23.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -329,8 +329,8 @@
     return out.join("\n");
   }
   function appendPrompt(existing, prompt) {
-    const head = String(existing || "").replace(/[\s​]+$/u, "");
-    return head ? `${head}
+    const head2 = String(existing || "").replace(/[\s​]+$/u, "");
+    return head2 ? `${head2}
 
 ${prompt}` : prompt;
   }
@@ -1255,6 +1255,7 @@ ${PAD}` : "";
     }
     const source = findPostSource(selection.node);
     const prompt = renderTemplate(ctx2.template, { text, url: source.url, author: source.author });
+    emit("askInsert", { text, url: source.url, author: source.author });
     busy = true;
     try {
       const result = selection.context === "grok" ? await followUp(selection, prompt, ctx2.plan) : await askGrok(prompt, ctx2.plan, app.doc);
@@ -1850,8 +1851,8 @@ ${PAD}` : "";
       link2?.remove();
       return;
     }
-    const head = doc.head;
-    if (!head) return;
+    const head2 = doc.head;
+    if (!head2) return;
     if (!link2) {
       link2 = doc.createElement("link");
       link2.id = ICON_ID;
@@ -1860,7 +1861,7 @@ ${PAD}` : "";
       link2.setAttribute("sizes", "any");
     }
     if (link2.getAttribute("href") !== href) link2.setAttribute("href", href);
-    if (head.lastElementChild !== link2) head.appendChild(link2);
+    if (head2.lastElementChild !== link2) head2.appendChild(link2);
   }
   function paint2(doc) {
     paintButton(doc);
@@ -3533,6 +3534,12 @@ ${PAD}` : "";
       max: MAX_MAX,
       default: 100
     },
+    promptOnly: {
+      type: OptionType.BOOLEAN,
+      label: "只记录提示词",
+      description: "去掉引用的原文（> 开头的行）、来源链接等 Ask X 写进去的内容，只保存你自己写的提示词。只有引用、没写提示词时不记录。",
+      default: true
+    },
     skipPrivate: {
       type: OptionType.BOOLEAN,
       label: "无痕对话不记录",
@@ -3556,10 +3563,46 @@ ${PAD}` : "";
   });
   var cursor = -1;
   var draft = "";
+  var head = "";
   var shown = null;
   var field2 = null;
   var recent = /* @__PURE__ */ new Map();
   var normalize = (text) => String(text ?? "").replace(/​/g, "").replace(/\r\n?/g, "\n").replace(/\s+$/u, "");
+  var inserted = [];
+  var offInsert = null;
+  var escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function isQuoteLine(line, quotes) {
+    if (/^\s*>/.test(line)) return true;
+    if (/^\s*(\S{0,12}[:：]\s*)?https?:\/\/\S+\s*$/u.test(line)) return true;
+    return quotes.some((q) => q.author && new RegExp(`^\\s*(\\S{0,12}[:：]\\s*)?@?${escapeRe(String(q.author).replace(/^@/, ""))}\\s*$`).test(line));
+  }
+  function promptOnly(text, quotes = inserted) {
+    let value = normalize(text);
+    for (const q of quotes) {
+      if (q.text && q.text.length > 1) value = value.split(q.text).join("\0");
+    }
+    const lines = value.split("\n").filter((line) => !isQuoteLine(line, quotes) && !/^\s*(\S{0,12}[:：]\s*)?\u0000[\s\u0000]*$/u.test(line)).map((line) => line.replace(/\u0000/g, ""));
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  function splitQuote(text, quotes = inserted) {
+    const value = String(text ?? "");
+    const lines = value.split("\n");
+    let n = 0;
+    let seen2 = false;
+    while (n < lines.length) {
+      const line = lines[n];
+      const trimmed = line.trim();
+      const quoted = isQuoteLine(line, quotes) || trimmed && quotes.some((q) => q.text && q.text.includes(trimmed));
+      if (!quoted && trimmed) break;
+      if (quoted) seen2 = true;
+      n += 1;
+    }
+    if (!seen2) return { head: "", body: value };
+    const head2 = lines.slice(0, n).join("\n");
+    const rest = lines.slice(n).join("\n");
+    return n >= lines.length ? { head: value.replace(/\n*$/u, "\n\n"), body: "" } : { head: `${head2}
+`, body: rest };
+  }
   function entries() {
     return settings11.store.entries;
   }
@@ -3574,6 +3617,11 @@ ${PAD}` : "";
     const max = Math.min(MAX_MAX, Math.max(MAX_MIN, settings11.store.maxEntries));
     settings11.store.entries = list.slice(-max);
     return true;
+  }
+  function cleanEntries() {
+    const list = entries();
+    const clean = [...new Set(list.map((e) => promptOnly(e, [])).filter((e) => e.trim()).reverse())].reverse();
+    if (clean.length !== list.length || clean.some((e, i) => e !== list[i])) settings11.store.entries = clean;
   }
   function removeEntry(index2) {
     settings11.store.entries = entries().filter((_, i) => i !== index2);
@@ -3624,6 +3672,7 @@ ${PAD}` : "";
     if (cursor < 0) {
       if (!older) return false;
       draft = readValue(area);
+      head = settings11.store.promptOnly ? splitQuote(draft).head : "";
       cursor = list.length;
     }
     const next = older ? cursor - 1 : cursor + 1;
@@ -3635,7 +3684,7 @@ ${PAD}` : "";
     }
     cursor = next;
     field2 = area;
-    setText(area, list[next], older);
+    setText(area, head + list[next], older);
     showHud(area, `${next + 1} / ${list.length}`);
     return true;
   }
@@ -3654,9 +3703,14 @@ ${PAD}` : "";
     return range.toString();
   }
   function atStart(area) {
-    if (area.tagName === "TEXTAREA") return area.selectionStart === 0 && area.selectionEnd === 0;
+    const top = settings11.store.promptOnly ? splitQuote(readValue(area)).head : "";
+    const squash = (s) => s.replace(/[\s\u200B]/g, "");
+    if (area.tagName === "TEXTAREA") {
+      if (area.selectionStart !== area.selectionEnd) return false;
+      return area.selectionStart === 0 || Boolean(top) && squash(area.value.slice(0, area.selectionStart)) === squash(top);
+    }
     const text = aroundCaret(area, true);
-    return text !== null && !text.replace(/\u200B/g, "");
+    return text !== null && (!squash(text) || Boolean(top) && squash(text) === squash(top));
   }
   function atEnd(area) {
     if (area.tagName === "TEXTAREA") {
@@ -3672,7 +3726,7 @@ ${PAD}` : "";
     return Boolean(root && isPrivateOn(root));
   }
   function capture(area) {
-    if (!skip(area)) pushEntry(readValue(area));
+    if (!skip(area)) pushEntry(settings11.store.promptOnly ? promptOnly(readValue(area)) : readValue(area));
     stopBrowsing();
   }
   function onKeyDown2(event) {
@@ -3691,7 +3745,8 @@ ${PAD}` : "";
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (event.shiftKey || event.metaKey || event.ctrlKey) return;
     const older = event.key === "ArrowUp";
-    const empty = !readValue(area).trim();
+    const value = readValue(area);
+    const empty = !(settings11.store.promptOnly ? splitQuote(value).body : value).trim();
     const edge = older ? atStart(area) || empty : atEnd(area) && cursor >= 0;
     if (!event.altKey && !edge) return;
     if (!step(area, older)) return;
@@ -3810,9 +3865,12 @@ ${PAD}` : "";
     const use = (text, index2) => {
       close();
       if (!area?.isConnected) return;
-      if (cursor < 0) draft = readValue(area);
+      if (cursor < 0) {
+        draft = readValue(area);
+        head = settings11.store.promptOnly ? splitQuote(draft).head : "";
+      }
       cursor = index2;
-      setText(area, text, false);
+      setText(area, head + text, false);
       area.focus();
       showHud(area, `${index2 + 1} / ${entries().length}`);
     };
@@ -3867,13 +3925,23 @@ ${PAD}` : "";
         style.textContent = CSS3;
         (doc.head || doc.documentElement).appendChild(style);
       }
+      if (settings11.store.promptOnly) cleanEntries();
+      offInsert = on("askInsert", (quote) => {
+        inserted.push(quote);
+        if (inserted.length > 20) inserted.shift();
+      });
       doc.addEventListener("keydown", onKeyDown2, true);
       doc.addEventListener("input", onInput2, true);
       doc.addEventListener("click", onClick4, true);
       doc.addEventListener("focusout", onFocusOut, true);
     },
+    onSettingsChange() {
+      if (settings11.store.promptOnly) cleanEntries();
+    },
     stop() {
       const doc = app.doc;
+      offInsert?.();
+      offInsert = null;
       doc.removeEventListener("keydown", onKeyDown2, true);
       doc.removeEventListener("input", onInput2, true);
       doc.removeEventListener("click", onClick4, true);
@@ -3920,9 +3988,9 @@ ${PAD}` : "";
       const scroller = scrollerOf(messages[0].el);
       const recent2 = last.root === root && Date.now() - last.at < 700 && last.idx < messages.length;
       const current2 = recent2 ? last.idx : activeIndex(messages, scroller);
-      const head = messages[current2].el.getBoundingClientRect().top;
+      const head2 = messages[current2].el.getBoundingClientRect().top;
       const viewTop = scroller === app.doc.scrollingElement ? 0 : scroller.getBoundingClientRect().top;
-      if (key === "ArrowUp") idx = !recent2 && head < viewTop - 8 ? current2 : current2 - 1;
+      if (key === "ArrowUp") idx = !recent2 && head2 < viewTop - 8 ? current2 : current2 - 1;
       else idx = current2 + 1;
     }
     idx = Math.max(0, Math.min(messages.length - 1, idx));
@@ -5449,7 +5517,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.22.1", release: "20261102" };
+  var META = { name: "Ask X", version: "1.23.0", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
