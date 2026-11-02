@@ -113,6 +113,12 @@ export function findGreeting(root) {
   if (getMessages(root).length) return null;
   const view = root.ownerDocument.defaultView;
   const composer = getComposer(root);
+  // Once painted, the title's own font-size is 0 (see css()), so it would
+  // fail the size test below and flip on and off with every repaint, e.g.
+  // on each keystroke. Keep it while its recorded size still qualifies.
+  const painted = root.querySelector(`[${MARK}]`);
+  if (painted && !(composer && (painted.contains(composer) || composer.contains(painted)))
+    && parseFloat(painted.style.getPropertyValue('--askx-greet-size')) >= MIN_FONT) return painted;
   for (const el of root.querySelectorAll('span, h1, h2, div[dir]')) {
     if (el.childElementCount || !el.textContent.trim()) continue;
     if (composer && (el.contains(composer) || composer.contains(el))) continue;

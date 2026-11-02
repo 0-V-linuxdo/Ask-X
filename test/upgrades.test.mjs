@@ -252,6 +252,10 @@ test('greeting: replaces the empty-chat title only, rotates, restores', () => {
   assert.equal(doc.querySelector('.hero').getAttribute('data-askx-greet'), '一');
   assert.equal(doc.querySelector('textarea').getAttribute('placeholder'), '一');
   assert.equal(doc.querySelector('.hero').textContent, 'How can I help you today?', 'X text untouched, drawn by CSS');
+  // Painted, the title's own font-size is 0; repaints (each keystroke) must keep it.
+  doc.querySelector('.hero').style.fontSize = '0px';
+  assert.equal(paintGreeting(doc), 1);
+  assert.equal(doc.querySelector('.hero').getAttribute('data-askx-greet'), '一', 'stays painted across repaints');
   assert.deepEqual(parsePhrases(' a \n\n b '), ['a', 'b']);
   assert.equal(nextIndex(0, 3, 'sequential'), 1);
   assert.equal(nextIndex(2, 3, 'sequential'), 0);

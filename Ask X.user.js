@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.22.0
-// @update-log   [20261102] v1.22.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.22.1
+// @update-log   [20261102] v1.22.1 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -2193,6 +2193,8 @@ ${PAD}` : "";
     if (getMessages(root).length) return null;
     const view = root.ownerDocument.defaultView;
     const composer = getComposer(root);
+    const painted = root.querySelector(`[${MARK3}]`);
+    if (painted && !(composer && (painted.contains(composer) || composer.contains(painted))) && parseFloat(painted.style.getPropertyValue("--askx-greet-size")) >= MIN_FONT) return painted;
     for (const el2 of root.querySelectorAll("span, h1, h2, div[dir]")) {
       if (el2.childElementCount || !el2.textContent.trim()) continue;
       if (composer && (el2.contains(composer) || composer.contains(el2))) continue;
@@ -5447,7 +5449,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.22.0", release: "20261102" };
+  var META = { name: "Ask X", version: "1.22.1", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
