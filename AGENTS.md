@@ -9,7 +9,7 @@
   2. Once the build is pushed to `0-V-linuxdo/Ask-X` (main, `Ask X.user.js`): open `chrome-extension://jinjaccalgkegednnccohejagnlnfdag/options/index.html` with `new_page` (`background: true`) and send `{ cmd: 'CheckUpdate', data: { ids: [1292] } }` (it resolves with the number updated, in about 1.5 s; a bare `data: 1292` is read as "no ids" and checks and updates every installed script), then read the version back with `GetData`. raw.githubusercontent.com caches for about 5 minutes after a push.
   3. Before it is pushed (local testing): serve `dist/` (`python3 -m http.server 8766 --bind 127.0.0.1` inside `dist/`) and, on the same options page, `fetch('http://127.0.0.1:8766/ask-x.user.js')` and send `{ cmd: 'ParseScript', data: { id: 1292, code } }`. This updates script 1292 in place, with no confirm page.
   4. Navigate that same tab to an X page to check the new code runs, then `close_page` it. That tab is the only one to close.
-- **After every update, close the pages you opened for it** (the Violentmonkey tab you navigated, any install or blank tabs) and stop the local server. Leave TC's own tabs alone; other agents share this browser, so check `location.href` before acting on a selected tab.
+- **After every update, close the pages you opened for it** (the Violentmonkey tab you navigated, any install or blank tabs) and stop the local server. Leave TC's own tabs alone; other agents share this browser, so check `location.href` before acting on a selected tab. The Helium MCP's selected page can switch to another agent's tab between calls (extension pages also drop out of `list_pages`), so `select_page` your own tab right before navigating, typing or pressing keys.
 
 ## Testing
 
