@@ -14,7 +14,7 @@ npm run build        # 或在 Chat-blocker 根目录 npm run build:askx
 
 | 插件 | 默认 | 作用 | 设置 |
 | --- | --- | --- | --- |
-| AskGrok | 必需 | 划词工具条 + 引号按钮，把引文写进 Grok 小窗；其他插件都挂在它上面 | — |
+| AskGrok | 必需 | 划词工具条 + 引号按钮，把引文写进 Grok 小窗；双击引号按钮带上次的提示词，右键从最近的提示词里选；其他插件都挂在它上面 | — |
 | NewChat | 开 | 提问前先点 Grok 的 New Chat；输入框里没发的草稿会带到新对话 | — |
 | Incognito | 开 | 工具条上的幽灵按钮走 Private Chat；普通提问时先关掉残留的无痕 | — |
 | QuoteFormat | 开 | 自定义引用模板（`{text}` `{quote}` `{url}` `{author}`）；关闭时用默认格式 | 引用模板 |

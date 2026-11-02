@@ -4,6 +4,7 @@
 import { rootOf } from './grok.js';
 import { paintIcon } from './iconLoader.js';
 import { watchTheme } from './theme.js';
+import { closePromptMenu, openPromptMenu } from './ui/promptMenu.js';
 
 export const ROOT_CLASS = 'askx-bar';
 const SKIP = [
@@ -43,9 +44,15 @@ export function currentSelection(win = window) {
 
 /**
  * @param {{ getButtons: (context: 'post'|'grok') => Array<{id:string,label:string,icon?:string,text?:string,className?:string,data?:object}>,
- *           onAsk: (selection, button, event) => void, win?: Window }} options
+ *           onAsk: (selection, button, event, prompt?) => void, recentPrompts?: () => string[], win?: Window }} options
+ *
+ * A button with `prompts: true` also takes a double click (asks with your
+ * last prompt) and a right click (a menu of recent prompts); its single
+ * click then waits DOUBLE_MS to tell the two apart.
  */
-export function createToolbar({ getButtons, onAsk, win = window }) {
+const DOUBLE_MS = 250;
+
+export function createToolbar({ getButtons, onAsk, recentPrompts = () => [], win = window }) {
   const doc = win.document;
   const bar = doc.createElement('div');
   bar.className = ROOT_CLASS;
@@ -59,6 +66,7 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
   let lastPicked = '';
   let quietUntil = 0;
   let timer = 0;
+  let pending = 0; // single click waiting for a possible second one
 
   function build(context = builtFor) {
     builtFor = context;
@@ -68,7 +76,7 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
       const el = doc.createElement('button');
       el.type = 'button';
       el.className = `askx-btn ${def.className || ''}`.trim();
-      el.title = def.label;
+      el.title = def.hint || def.label;
       el.setAttribute('aria-label', def.label);
       el.dataset.index = String(index);
       if (def.icon) el.innerHTML = def.icon;
@@ -90,6 +98,9 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
   }
 
   function hide() {
+    win.clearTimeout(pending);
+    pending = 0;
+    closePromptMenu();
     current = null;
     bar.hidden = true;
   }
@@ -128,7 +139,7 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
   let dragging = false;
   const KEY_PAUSE_MS = 350;
   function schedule(event) {
-    if (event?.target?.closest?.(`.${ROOT_CLASS}`)) return;
+    if (event?.target?.closest?.(`.${ROOT_CLASS}, .askx-prompt-menu`)) return;
     win.clearTimeout(timer);
     if (event?.type === 'selectionchange' || event?.type === 'keyup') {
       if (dragging) return;
@@ -138,7 +149,7 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
     timer = win.setTimeout(refresh, 0);
   }
   function onDown(event) {
-    if (event.button !== 0 || event.target?.closest?.(`.${ROOT_CLASS}`)) return;
+    if (event.button !== 0 || event.target?.closest?.(`.${ROOT_CLASS}, .askx-prompt-menu`)) return;
     dragging = true;
     win.clearTimeout(timer);
     hide();
@@ -152,17 +163,41 @@ export function createToolbar({ getButtons, onAsk, win = window }) {
     event.preventDefault();
     event.stopPropagation();
   });
+  function fire(picked, def, event, prompt) {
+    lastPicked = picked.text;
+    quietUntil = Date.now() + 2_000;
+    hide();
+    try { win.getSelection()?.removeAllRanges(); } catch {}
+    onAsk(picked, def, event, prompt);
+  }
+
   bar.addEventListener('click', (event) => {
     const target = event.target.closest('button');
     if (!target || !current) return;
     event.preventDefault();
     event.stopPropagation();
     const picked = current;
-    lastPicked = picked.text;
-    quietUntil = Date.now() + 2_000;
-    hide();
-    try { win.getSelection()?.removeAllRanges(); } catch {}
-    onAsk(picked, buttons[Number(target.dataset.index)], event);
+    const def = buttons[Number(target.dataset.index)];
+    if (!def?.prompts) {
+      fire(picked, def, event);
+      return;
+    }
+    win.clearTimeout(pending);
+    pending = 0;
+    if (event.detail >= 2) {
+      fire(picked, def, event, recentPrompts()[0]);
+      return;
+    }
+    pending = win.setTimeout(() => { pending = 0; fire(picked, def, event); }, DOUBLE_MS);
+  });
+  bar.addEventListener('contextmenu', (event) => {
+    const target = event.target.closest('button');
+    const def = target && buttons[Number(target.dataset.index)];
+    event.preventDefault();
+    event.stopPropagation();
+    if (!def?.prompts || !current) return;
+    const picked = current;
+    openPromptMenu(doc, target, recentPrompts(), (prompt) => fire(picked, def, event, prompt));
   });
 
   const stopTheme = watchTheme(doc, (theme) => { bar.dataset.theme = theme; });

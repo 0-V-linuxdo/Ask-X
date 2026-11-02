@@ -125,6 +125,17 @@ export function entries() {
   return settings.store.entries;
 }
 
+// Your latest prompts, newest first, without quotes or repeats.
+export function recentPrompts(limit = 8) {
+  const out = [];
+  for (const entry of [...entries()].reverse()) {
+    const prompt = promptOnly(entry, []);
+    if (prompt && !out.includes(prompt)) out.push(prompt);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export function pushEntry(text, now = Date.now()) {
   const value = normalize(text);
   if (!value.trim()) return false;

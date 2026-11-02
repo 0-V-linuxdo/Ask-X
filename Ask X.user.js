@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.23.0
-// @update-log   [20261102] v1.23.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.24.0
+// @update-log   [20261102] v1.24.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -733,17 +733,17 @@ ${PAD}` : "";
     return Boolean(el2?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]'));
   }
   function frameThrottle(view, fn) {
-    let pending2 = 0;
+    let pending3 = 0;
     const run = () => {
-      pending2 = 0;
+      pending3 = 0;
       fn();
     };
     const schedule7 = () => {
-      if (!pending2) pending2 = (view.requestAnimationFrame || ((f) => view.setTimeout(f, 16)))(run);
+      if (!pending3) pending3 = (view.requestAnimationFrame || ((f) => view.setTimeout(f, 16)))(run);
     };
     schedule7.cancel = () => {
-      if (pending2) (view.cancelAnimationFrame || view.clearTimeout)(pending2);
-      pending2 = 0;
+      if (pending3) (view.cancelAnimationFrame || view.clearTimeout)(pending3);
+      pending3 = 0;
     };
     return schedule7;
   }
@@ -1041,6 +1041,108 @@ ${PAD}` : "";
     };
   }
 
+  // src/ui/dom.js
+  function el(doc, tag, attrs = {}, children = []) {
+    const node2 = doc.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (key === "text") node2.textContent = value;
+      else if (key === "html") node2.innerHTML = value;
+      else if (key.startsWith("on")) node2.addEventListener(key.slice(2), value);
+      else if (value !== false && value != null) node2.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children) if (child) node2.appendChild(child);
+    return node2;
+  }
+
+  // src/ui/promptMenu.js
+  var MENU = "askx-prompt-menu";
+  var closeOpen = null;
+  var oneLine = (text, max = 40) => {
+    const line = text.replace(/\s+/g, " ").trim();
+    return line.length > max ? `${line.slice(0, max)}…` : line;
+  };
+  function closePromptMenu() {
+    closeOpen?.();
+  }
+  function openPromptMenu(doc, anchor, prompts, onPick) {
+    closePromptMenu();
+    const view = doc.defaultView;
+    const menu = el(doc, "div", { class: MENU, role: "menu", "data-theme": pageTheme(doc) });
+    if (!prompts.length) menu.appendChild(el(doc, "div", { class: "askx-prompt-menu-empty", text: "还没有提示词历史" }));
+    for (const prompt of prompts) {
+      menu.appendChild(el(doc, "button", {
+        type: "button",
+        role: "menuitem",
+        class: "askx-prompt-menu-item",
+        title: prompt,
+        text: oneLine(prompt),
+        onclick: (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+          onPick(prompt);
+        }
+      }));
+    }
+    menu.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    doc.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    const left = Math.min(view.innerWidth - w - 8, Math.max(8, r.left));
+    let top = r.bottom + 6;
+    if (top + h > view.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+    menu.querySelector("button")?.focus({ preventScroll: true });
+    const onDown = (event) => {
+      if (!menu.contains(event.target)) close();
+    };
+    const onKey2 = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    };
+    function close() {
+      if (closeOpen !== close) return;
+      closeOpen = null;
+      menu.remove();
+      doc.removeEventListener("mousedown", onDown, true);
+      doc.removeEventListener("keydown", onKey2, true);
+      view.removeEventListener("scroll", close, true);
+      view.removeEventListener("resize", close);
+    }
+    closeOpen = close;
+    doc.addEventListener("mousedown", onDown, true);
+    doc.addEventListener("keydown", onKey2, true);
+    view.addEventListener("scroll", close, true);
+    view.addEventListener("resize", close);
+    return close;
+  }
+  var PROMPT_MENU_CSS = `
+.${MENU} {
+  --askx-bg: #000; --askx-fg: #e7e9ea; --askx-muted: #71767b; --askx-hover: rgba(231, 233, 234, 0.1);
+  --askx-shadow: 0 0 15px rgba(255, 255, 255, 0.2), 0 0 3px 1px rgba(255, 255, 255, 0.15);
+  position: fixed; z-index: 2147483647; display: flex; flex-direction: column; min-width: 160px; max-width: 320px;
+  padding: 4px; border-radius: 12px; color: var(--askx-fg); background: var(--askx-bg); box-shadow: var(--askx-shadow);
+  font: 400 14px/20px TwitterChirp, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none;
+}
+.${MENU}[data-theme="light"] {
+  --askx-bg: #fff; --askx-fg: #0f1419; --askx-muted: #536471; --askx-hover: rgba(15, 20, 25, 0.1);
+  --askx-shadow: 0 0 15px rgba(101, 119, 134, 0.2), 0 0 3px 1px rgba(101, 119, 134, 0.15);
+}
+.askx-prompt-menu-item {
+  display: block; width: 100%; margin: 0; padding: 6px 10px; border: 0; border-radius: 8px; color: inherit; background: transparent;
+  font: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.askx-prompt-menu-item:hover, .askx-prompt-menu-item:focus-visible { background: var(--askx-hover); outline: none; }
+.askx-prompt-menu-empty { padding: 6px 10px; color: var(--askx-muted); }
+`;
+
   // src/toolbar.js
   var ROOT_CLASS = "askx-bar";
   var SKIP = [
@@ -1073,7 +1175,8 @@ ${PAD}` : "";
     const context = rootOf(el2, doc) ? "grok" : "post";
     return { text, node: range.commonAncestorContainer, rect, context };
   }
-  function createToolbar({ getButtons, onAsk, win = window }) {
+  var DOUBLE_MS = 250;
+  function createToolbar({ getButtons, onAsk, recentPrompts: recentPrompts2 = () => [], win = window }) {
     const doc = win.document;
     const bar2 = doc.createElement("div");
     bar2.className = ROOT_CLASS;
@@ -1086,6 +1189,7 @@ ${PAD}` : "";
     let lastPicked = "";
     let quietUntil = 0;
     let timer3 = 0;
+    let pending3 = 0;
     function build2(context = builtFor) {
       builtFor = context;
       buttons = getButtons(context);
@@ -1094,7 +1198,7 @@ ${PAD}` : "";
         const el2 = doc.createElement("button");
         el2.type = "button";
         el2.className = `askx-btn ${def.className || ""}`.trim();
-        el2.title = def.label;
+        el2.title = def.hint || def.label;
         el2.setAttribute("aria-label", def.label);
         el2.dataset.index = String(index2);
         if (def.icon) el2.innerHTML = def.icon;
@@ -1115,6 +1219,9 @@ ${PAD}` : "";
       });
     }
     function hide() {
+      win.clearTimeout(pending3);
+      pending3 = 0;
+      closePromptMenu();
       current2 = null;
       bar2.hidden = true;
     }
@@ -1147,7 +1254,7 @@ ${PAD}` : "";
     let dragging = false;
     const KEY_PAUSE_MS = 350;
     function schedule7(event) {
-      if (event?.target?.closest?.(`.${ROOT_CLASS}`)) return;
+      if (event?.target?.closest?.(`.${ROOT_CLASS}, .askx-prompt-menu`)) return;
       win.clearTimeout(timer3);
       if (event?.type === "selectionchange" || event?.type === "keyup") {
         if (dragging) return;
@@ -1157,7 +1264,7 @@ ${PAD}` : "";
       timer3 = win.setTimeout(refresh2, 0);
     }
     function onDown(event) {
-      if (event.button !== 0 || event.target?.closest?.(`.${ROOT_CLASS}`)) return;
+      if (event.button !== 0 || event.target?.closest?.(`.${ROOT_CLASS}, .askx-prompt-menu`)) return;
       dragging = true;
       win.clearTimeout(timer3);
       hide();
@@ -1170,12 +1277,7 @@ ${PAD}` : "";
       event.preventDefault();
       event.stopPropagation();
     });
-    bar2.addEventListener("click", (event) => {
-      const target = event.target.closest("button");
-      if (!target || !current2) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const picked = current2;
+    function fire(picked, def, event, prompt) {
       lastPicked = picked.text;
       quietUntil = Date.now() + 2e3;
       hide();
@@ -1183,7 +1285,38 @@ ${PAD}` : "";
         win.getSelection()?.removeAllRanges();
       } catch {
       }
-      onAsk(picked, buttons[Number(target.dataset.index)], event);
+      onAsk(picked, def, event, prompt);
+    }
+    bar2.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || !current2) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const picked = current2;
+      const def = buttons[Number(target.dataset.index)];
+      if (!def?.prompts) {
+        fire(picked, def, event);
+        return;
+      }
+      win.clearTimeout(pending3);
+      pending3 = 0;
+      if (event.detail >= 2) {
+        fire(picked, def, event, recentPrompts2()[0]);
+        return;
+      }
+      pending3 = win.setTimeout(() => {
+        pending3 = 0;
+        fire(picked, def, event);
+      }, DOUBLE_MS);
+    });
+    bar2.addEventListener("contextmenu", (event) => {
+      const target = event.target.closest("button");
+      const def = target && buttons[Number(target.dataset.index)];
+      event.preventDefault();
+      event.stopPropagation();
+      if (!def?.prompts || !current2) return;
+      const picked = current2;
+      openPromptMenu(doc, target, recentPrompts2(), (prompt) => fire(picked, def, event, prompt));
     });
     const stopTheme2 = watchTheme(doc, (theme2) => {
       bar2.dataset.theme = theme2;
@@ -1212,1845 +1345,6 @@ ${PAD}` : "";
         bar2.remove();
       }
     };
-  }
-
-  // src/plugins/askGrok.js
-  var toolbar = null;
-  var unsubscribe = null;
-  var busy = false;
-  function toolbarButtons(context = "post") {
-    const buttons = [];
-    for (const plugin of app.manager.enabledPlugins()) {
-      if (typeof plugin.toolbarButtons !== "function") continue;
-      for (const button of plugin.toolbarButtons(context)) {
-        if ((button.contexts || ["post"]).includes(context)) buttons.push({ ...button, plugin: plugin.name });
-      }
-    }
-    return buttons.sort((a, b) => (a.order ?? 50) - (b.order ?? 50));
-  }
-  function buildRequest(selection, trigger) {
-    const ctx2 = {
-      selection,
-      trigger,
-      template: DEFAULT_TEMPLATE,
-      maxLength: 2e3,
-      plan: { newChat: false, privateMode: "keep", writeMode: "append", autoSend: false }
-    };
-    const hooks = app.manager.enabledPlugins().filter((p) => typeof p.onAsk === "function").sort((a, b) => (a.askOrder ?? 50) - (b.askOrder ?? 50));
-    for (const plugin of hooks) plugin.onAsk(ctx2);
-    if (selection?.context === "grok") {
-      ctx2.plan.newChat = false;
-      ctx2.plan.privateMode = "keep";
-    }
-    return ctx2;
-  }
-  async function ask(selection, trigger = { id: "ask" }) {
-    if (busy) return null;
-    const ctx2 = buildRequest(selection, trigger);
-    const text = cleanSelection(selection?.text, ctx2.maxLength);
-    if (!text) {
-      const result = { ok: false, reason: "empty" };
-      emit("askResult", { result, ctx: ctx2 });
-      return result;
-    }
-    const source = findPostSource(selection.node);
-    const prompt = renderTemplate(ctx2.template, { text, url: source.url, author: source.author });
-    emit("askInsert", { text, url: source.url, author: source.author });
-    busy = true;
-    try {
-      const result = selection.context === "grok" ? await followUp(selection, prompt, ctx2.plan) : await askGrok(prompt, ctx2.plan, app.doc);
-      if (result.ok && !result.sent) result.composer?.focus();
-      emit("askResult", { result, ctx: ctx2 });
-      return result;
-    } catch (error) {
-      console.error("[Ask X]", error);
-      const result = { ok: false, reason: "error" };
-      emit("askResult", { result, ctx: ctx2 });
-      return result;
-    } finally {
-      busy = false;
-    }
-  }
-  async function followUp(selection, prompt, plan) {
-    const root = rootOf(selection.node, app.doc);
-    const composer = getComposer(root);
-    if (!composer) return { ok: false, reason: "no-composer" };
-    if (!await writePrompt(composer, prompt, plan.writeMode)) return { ok: false, reason: "write-failed" };
-    let sent = false;
-    const notes = [];
-    if (plan.autoSend) {
-      sent = await sendPrompt(root);
-      if (!sent) notes.push("send-failed");
-    }
-    return { ok: true, sent, followUp: true, notes, composer };
-  }
-  var askGrok_default = definePlugin({
-    name: "AskGrok",
-    description: "划词后弹出工具条，点引号把选中文字和推文链接写进 Grok 小窗。其他插件都挂在它上面。",
-    icon: ICONS.quote,
-    required: true,
-    tags: ["composer"],
-    askOrder: 0,
-    toolbarButtons: () => [{ id: "ask", label: "问 Grok", icon: ICONS.quote, className: "askx-main", order: 0 }],
-    start() {
-      toolbar = createToolbar({
-        getButtons: toolbarButtons,
-        onAsk: (selection, button, event) => void ask(selection, { ...button, altKey: Boolean(event?.altKey) })
-      });
-      unsubscribe = app.manager.subscribe(() => toolbar?.rebuild());
-    },
-    stop() {
-      unsubscribe?.();
-      toolbar?.destroy();
-      toolbar = null;
-    }
-  });
-
-  // src/grokScope.js
-  var PAGE_FLAG = "data-askx-grok-page";
-  var GROK = `:is(${DRAWER}, html[${PAGE_FLAG}] main)`;
-  var users = /* @__PURE__ */ new Set();
-  var observer = null;
-  var schedule = null;
-  var lastPage = null;
-  function sync(doc) {
-    const page = onGrokPage(doc);
-    if (page !== lastPage) {
-      lastPage = page;
-      doc.documentElement.toggleAttribute(PAGE_FLAG, page);
-    }
-    for (const fn of users) {
-      try {
-        fn(doc);
-      } catch (error) {
-        console.error("[Ask X] grok scope update failed", error);
-      }
-    }
-  }
-  function watchGrok(doc, onChange = () => {
-  }) {
-    users.add(onChange);
-    if (!observer) {
-      const view = doc.defaultView;
-      schedule = timeThrottle(view, () => sync(doc), 120);
-      observer = new view.MutationObserver((records) => {
-        if (onGrokPage(doc) !== lastPage || touchesGrok(records, doc)) schedule();
-      });
-      observer.observe(doc.body, { childList: true, subtree: true });
-    }
-    sync(doc);
-    return () => {
-      users.delete(onChange);
-      if (users.size) return;
-      observer?.disconnect();
-      observer = null;
-      schedule?.cancel();
-      schedule = null;
-      lastPage = null;
-      doc.documentElement.removeAttribute(PAGE_FLAG);
-    };
-  }
-  function addStyle(doc, id, css5) {
-    let style = doc.getElementById(id);
-    if (!style) {
-      style = doc.createElement("style");
-      style.id = id;
-      (doc.head || doc.documentElement).appendChild(style);
-    }
-    if (style.textContent !== css5) style.textContent = css5;
-    return style;
-  }
-
-  // src/plugins/toasts.js
-  var DURATION_MS = 2600;
-  var FAILURES = {
-    empty: "没有可用的划词。",
-    "no-drawer": "这个页面没有 Grok 小窗（Grok 全页里请直接输入）。",
-    "not-ready": "Grok 小窗没能展开，请稍后再试。",
-    "no-composer": "找不到 Grok 输入框。",
-    "write-failed": "无法写入 Grok 输入框。"
-  };
-  var off = null;
-  var timer = 0;
-  function describe({ result, ctx: ctx2 }) {
-    if (!result.ok) return { kind: "error", text: FAILURES[result.reason] || "发送到 Grok 失败。" };
-    const where = result.private ? "无痕对话" : ctx2.plan.newChat && !result.followUp ? "新对话" : "当前对话";
-    let text = result.sent ? `已在${where}中发送给 Grok。` : `已写入 Grok ${where}。`;
-    if (result.notes?.includes("private-unavailable")) text += "（无痕切换失败）";
-    if (result.notes?.includes("send-failed")) text += "（自动发送失败，请手动发送）";
-    return { kind: result.private ? "private" : "info", text };
-  }
-  function showToast(text, kind2 = "info", doc = app.doc, { duration = DURATION_MS, closable = false, detail = "", onClick: onClick6 = null } = {}) {
-    doc.querySelector(".askx-toast")?.remove();
-    const node2 = doc.createElement("div");
-    node2.className = "askx-toast";
-    node2.dataset.kind = kind2;
-    node2.setAttribute("role", "status");
-    const title = doc.createElement("div");
-    title.className = "askx-toast-text";
-    title.textContent = text;
-    node2.appendChild(title);
-    if (detail) {
-      const line = doc.createElement("div");
-      line.className = "askx-toast-detail";
-      line.textContent = detail;
-      node2.appendChild(line);
-    }
-    if (closable) {
-      const close = doc.createElement("button");
-      close.type = "button";
-      close.className = "askx-toast-close";
-      close.setAttribute("aria-label", "关闭");
-      close.textContent = "×";
-      close.addEventListener("click", (event) => {
-        event.stopPropagation();
-        node2.remove();
-      });
-      node2.appendChild(close);
-      node2.dataset.closable = "true";
-    }
-    if (onClick6) {
-      node2.style.cursor = "pointer";
-      node2.addEventListener("click", () => {
-        node2.remove();
-        onClick6();
-      });
-    }
-    doc.body.appendChild(node2);
-    clearTimeout(timer);
-    if (duration > 0) timer = setTimeout(() => node2.remove(), duration);
-    return node2;
-  }
-  var toasts_default = definePlugin({
-    name: "Toasts",
-    description: "在页面底部提示结果：写入了哪种对话、无痕是否生效、出了什么错。",
-    icon: ICONS.bell,
-    tags: ["notifications"],
-    enabledByDefault: true,
-    start() {
-      off = on("askResult", (event) => {
-        const { kind: kind2, text } = describe(event);
-        showToast(text, kind2);
-      });
-    },
-    stop() {
-      off?.();
-      app.doc.querySelector(".askx-toast")?.remove();
-    }
-  });
-
-  // src/plugins/autoRetry.js
-  var settings = definePluginSettings({
-    delay: {
-      type: OptionType.SLIDER,
-      label: "等待秒数",
-      description: "出错后等几秒再自动重试。",
-      min: 1,
-      max: 10,
-      default: 2
-    }
-  });
-  var RETRY_LABELS = ["Retry", "Try again", "重试", "再试一次", "重新尝试", "重新整理"];
-  var COOLDOWN_MS = 6e4;
-  var tried = /* @__PURE__ */ new WeakSet();
-  var lastAuto = -Infinity;
-  var pending = 0;
-  var label = (el2) => (el2.getAttribute("aria-label") || el2.textContent || "").trim().toLowerCase();
-  function findRetry(root) {
-    const list = messageList(root);
-    const last2 = list?.lastElementChild;
-    if (!last2) return null;
-    const wanted = RETRY_LABELS.map((l) => l.toLowerCase());
-    for (let row2 = last2; row2; row2 = row2.previousElementSibling) {
-      if (!row2.textContent.trim()) continue;
-      return [...row2.querySelectorAll('button, [role="button"]')].find((b) => wanted.includes(label(b)) && !b.disabled) || null;
-    }
-    return null;
-  }
-  function check(doc = app.doc, now = Date.now()) {
-    for (const root of grokRoots(doc)) {
-      const button = findRetry(root);
-      if (!button || tried.has(button)) continue;
-      tried.add(button);
-      if (now - lastAuto < COOLDOWN_MS) return "cooldown";
-      lastAuto = now;
-      const view = doc.defaultView;
-      view.clearTimeout(pending);
-      pending = view.setTimeout(() => {
-        if (!button.isConnected) return;
-        button.click();
-        showToast("Grok 回复出错，已自动重试一次。", "info", doc);
-      }, Math.max(1, settings.store.delay) * 1e3);
-      return "scheduled";
-    }
-    return null;
-  }
-  var stop = null;
-  var autoRetry_default = definePlugin({
-    name: "AutoRetry",
-    description: "Grok 回复出错（Something went wrong）时，自动点一次 X 自带的 Retry。每次出错只重试一次，一分钟内最多一次（移植自 void++）。",
-    icon: ICONS.retry,
-    tags: ["chats"],
-    enabledByDefault: true,
-    settings,
-    start() {
-      stop = watchGrok(app.doc, (doc) => check(doc));
-    },
-    stop() {
-      stop?.();
-      stop = null;
-      app.doc.defaultView.clearTimeout(pending);
-    }
-  });
-
-  // src/plugins/betterLinks.js
-  var HIGHLIGHT = "askx-bare-link";
-  var VISITED = "askx-bare-link-visited";
-  var MAX_VISITED = 500;
-  var settings2 = definePluginSettings({
-    visitedColor: {
-      type: OptionType.BOOLEAN,
-      label: "已访问链接变色",
-      description: "点过的域名链接改用紫色显示（移植自 void++）。",
-      default: true
-    }
-  });
-  function visitedList() {
-    const list = app.manager?.pluginData?.("BetterLinks")?.visited;
-    return Array.isArray(list) ? list : [];
-  }
-  function markVisited(href) {
-    const list = visitedList().filter((h) => h !== href);
-    list.push(href);
-    app.manager?.mergePluginData?.("BetterLinks", { visited: list.slice(-MAX_VISITED) });
-  }
-  var STYLE_ID = "askx-better-links";
-  var TLDS = "com|org|net|io|ai|dev|app|co|me|gg|tv|xyz|info|edu|gov|so|sh|tech|site|wiki|page|link|cn|jp|kr|uk|de|fr|ru|us|ca|au|in|eu|hk|tw|sg";
-  var DOMAIN = new RegExp(`(?<![@\\w.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:${TLDS})(?![\\w-])(?:/[^\\s，。、；：！？）)」』"'<>]*)?`, "gi");
-  var SKIP2 = 'a, code, pre, textarea, [contenteditable="true"], button, .askx-um';
-  function findDomains(text) {
-    const out = [];
-    for (const m of text.matchAll(DOMAIN)) {
-      const value = m[0].replace(/[.,:;!?]+$/u, "");
-      out.push({ index: m.index, text: value });
-    }
-    return out;
-  }
-  function hrefFor(text) {
-    return /^https?:\/\//i.test(text) ? text : `https://${text}`;
-  }
-  function textNodes(root) {
-    const doc = root.ownerDocument;
-    const walker = doc.createTreeWalker(root, 4, {
-      acceptNode: (n) => n.nodeValue && n.nodeValue.includes(".") && !n.parentElement?.closest(SKIP2) ? 1 : 3
-    });
-    const out = [];
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n);
-    return out;
-  }
-  function collect(doc = app.doc) {
-    const found = [];
-    for (const root of grokRoots(doc)) {
-      const list = messageList(root);
-      if (!list) continue;
-      for (const node2 of textNodes(list)) {
-        for (const { index: index2, text } of findDomains(node2.nodeValue)) {
-          const range = doc.createRange();
-          range.setStart(node2, index2);
-          range.setEnd(node2, index2 + text.length);
-          found.push({ range, href: hrefFor(text) });
-        }
-      }
-    }
-    return found;
-  }
-  var links = [];
-  function paint(doc) {
-    links = collect(doc);
-    const view = doc.defaultView;
-    if (!view.CSS?.highlights || typeof view.Highlight !== "function") return;
-    const visited = settings2.store.visitedColor ? new Set(visitedList()) : /* @__PURE__ */ new Set();
-    const fresh = links.filter((l) => !visited.has(l.href)).map((l) => l.range);
-    const seen2 = links.filter((l) => visited.has(l.href)).map((l) => l.range);
-    if (fresh.length) view.CSS.highlights.set(HIGHLIGHT, new view.Highlight(...fresh));
-    else view.CSS.highlights.delete(HIGHLIGHT);
-    if (seen2.length) view.CSS.highlights.set(VISITED, new view.Highlight(...seen2));
-    else view.CSS.highlights.delete(VISITED);
-  }
-  function linkAt(doc, x, y) {
-    const pos = doc.caretPositionFromPoint?.(x, y);
-    const node2 = pos ? pos.offsetNode : doc.caretRangeFromPoint?.(x, y)?.startContainer;
-    const offset = pos ? pos.offset : doc.caretRangeFromPoint?.(x, y)?.startOffset;
-    if (!node2 || node2.nodeType !== 3) return null;
-    return links.find(({ range }) => range.startContainer === node2 && offset >= range.startOffset && offset <= range.endOffset && (() => {
-      const r = range.getBoundingClientRect();
-      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-    })()) || null;
-  }
-  var inGrok = (target) => Boolean(target?.closest?.('[data-testid="GrokDrawer"], html[data-askx-grok-page] main'));
-  function onClick(event) {
-    if (event.button !== 0 || !links.length || !inGrok(event.target)) return;
-    const doc = event.target.ownerDocument;
-    if (doc.defaultView.getSelection?.()?.toString()) return;
-    const hit = linkAt(doc, event.clientX, event.clientY);
-    if (!hit) return;
-    event.preventDefault();
-    event.stopPropagation();
-    doc.defaultView.open(hit.href, "_blank", "noopener");
-    markVisited(hit.href);
-    paint(doc);
-  }
-  var lastCursor = null;
-  function onMove(event) {
-    const host = links.length ? event.target.closest?.('[data-testid="GrokDrawer"], html[data-askx-grok-page] main') : null;
-    const over = Boolean(host && linkAt(event.target.ownerDocument, event.clientX, event.clientY));
-    if (over && host) {
-      host.style.cursor = "pointer";
-      lastCursor = host;
-    } else if (lastCursor) {
-      lastCursor.style.removeProperty("cursor");
-      lastCursor = null;
-    }
-  }
-  var stop2 = null;
-  var betterLinks_default = definePlugin({
-    name: "BetterLinks",
-    description: "Grok 回复里只写了域名的地方（如 pearltrees.com）变成可点击的链接，在新标签页打开。不改动 X 的消息内容（移植自 void++）。",
-    icon: ICONS.link,
-    tags: ["messages"],
-    enabledByDefault: true,
-    settings: settings2,
-    onSettingsChange: () => paint(app.doc),
-    start() {
-      const doc = app.doc;
-      addStyle(doc, STYLE_ID, `::highlight(${HIGHLIGHT}){color:rgb(29,155,240);text-decoration:underline;text-underline-offset:2px}::highlight(${VISITED}){color:rgb(149,117,205);text-decoration:underline;text-underline-offset:2px}`);
-      stop2 = watchGrok(doc, paint);
-      doc.addEventListener("click", onClick, true);
-      doc.addEventListener("mousemove", onMove, { passive: true });
-    },
-    stop() {
-      const doc = app.doc;
-      stop2?.();
-      stop2 = null;
-      doc.removeEventListener("click", onClick, true);
-      doc.removeEventListener("mousemove", onMove);
-      doc.defaultView.CSS?.highlights?.delete(HIGHLIGHT);
-      doc.defaultView.CSS?.highlights?.delete(VISITED);
-      doc.getElementById(STYLE_ID)?.remove();
-      lastCursor?.style.removeProperty("cursor");
-      lastCursor = null;
-      links = [];
-    }
-  });
-
-  // src/streamWatch.js
-  var EVENT = "askx:grok-stream";
-  var REPLY_URL = /\/2\/grok\/add_response\.json|\/rest\/app-chat\/conversations\/(?:new|[^/?#]+\/responses)(?:[?#]|$)/;
-  var STALE_MS = 5 * 6e4;
-  var isReplyUrl = (url) => REPLY_URL.test(String(url || ""));
-  var listeners = /* @__PURE__ */ new Set();
-  var live = /* @__PURE__ */ new Map();
-  var seq = 0;
-  var installedOn = null;
-  var perf = null;
-  function emit2(detail) {
-    for (const fn of listeners) {
-      try {
-        fn(detail);
-      } catch (error) {
-        console.error("[Ask X] stream listener failed", error);
-      }
-    }
-  }
-  function start() {
-    const now = Date.now();
-    for (const [id2, at] of live) if (now - at > STALE_MS) live.delete(id2);
-    const id = ++seq;
-    live.set(id, now);
-    emit2({ id, phase: "start" });
-  }
-  function handleEntry(entry) {
-    if (!isReplyUrl(entry?.name)) return false;
-    if (!live.size) return false;
-    const status = entry.responseStatus || 0;
-    const id = live.keys().next().value;
-    live.delete(id);
-    emit2({ id, phase: "end", ok: !status || status < 400 });
-    return true;
-  }
-  function isComposer(el2) {
-    return Boolean(el2 && (el2.tagName === "TEXTAREA" || el2.isContentEditable && el2.getAttribute?.("role") === "textbox") && rootOf(el2, el2.ownerDocument));
-  }
-  function hasText(el2) {
-    const text = el2.tagName === "TEXTAREA" ? el2.value : el2.textContent;
-    return /\S/.test(String(text || "").replace(/​/g, ""));
-  }
-  function onKeyDown(event) {
-    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.isComposing || event.keyCode === 229) return;
-    const el2 = event.target;
-    if (isComposer(el2) && hasText(el2)) start();
-  }
-  function onClick2(event) {
-    const button = event.target.closest?.('button, [role="button"]');
-    const root = button && rootOf(button, button.ownerDocument);
-    if (!root || button !== findButton(root, xLabels().send)) return;
-    const field3 = root.querySelector('textarea, [contenteditable="true"][role="textbox"]');
-    if (field3 && hasText(field3)) start();
-  }
-  function onEvent(event) {
-    let detail;
-    try {
-      detail = JSON.parse(event.detail);
-    } catch {
-      return;
-    }
-    if (detail?.phase === "start") start();
-    else if (detail?.phase === "end") {
-      if (!live.size) return;
-      const id = live.keys().next().value;
-      live.delete(id);
-      emit2({ id, phase: "end", ok: detail.ok !== false });
-    }
-  }
-  function install(doc) {
-    const view = doc.defaultView;
-    doc.addEventListener("keydown", onKeyDown, { capture: true, passive: true });
-    doc.addEventListener("click", onClick2, { capture: true, passive: true });
-    doc.addEventListener(EVENT, onEvent);
-    if (typeof view?.PerformanceObserver === "function") {
-      try {
-        perf = new view.PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) handleEntry(entry);
-        });
-        perf.observe({ type: "resource" });
-      } catch (error) {
-        console.warn("[Ask X] resource timing unavailable", error);
-      }
-    }
-  }
-  function cancelAll() {
-    if (!live.size) return false;
-    const ids2 = [...live.keys()];
-    live.clear();
-    for (const id of ids2) emit2({ id, phase: "end", ok: true, cancelled: true });
-    return true;
-  }
-  function isStreaming() {
-    return live.size > 0;
-  }
-  function watchStreams(doc, fn) {
-    if (installedOn !== doc) {
-      installedOn = doc;
-      install(doc);
-    }
-    listeners.add(fn);
-    return () => listeners.delete(fn);
-  }
-
-  // src/plugins/grokState.js
-  var ICON_ID = "askx-chat-state-favicon";
-  var STYLE_ID2 = "askx-grok-state";
-  var STATE = "data-askx-grok-state";
-  var STYLE = "data-askx-grok-style";
-  var settings3 = definePluginSettings({
-    buttonStyle: {
-      type: OptionType.SELECT,
-      label: "Grok 按钮样式",
-      description: "小窗收起后 Grok 按钮怎样显示状态（回复中蓝、完成绿、待发送黄、出错红），样式和 Void++ 一致，只用其中一种。选“不显示”时由 StatusBadge 的角标圆点接管。",
-      options: [
-        { value: "hole", label: "Grok 标志变色" },
-        { value: "bg", label: "背景变色" },
-        { value: "dot", label: "彩色圆点" },
-        { value: "badge", label: "徽标 + 符号" },
-        { value: "original", label: "只用表情" },
-        { value: "none", label: "不显示" }
-      ],
-      default: "hole"
-    },
-    favicon: {
-      type: OptionType.BOOLEAN,
-      label: "标签页图标显示状态",
-      description: "在 X 自己的图标右下角加一个彩色状态点。空闲时恢复 X 原图标。",
-      default: false
-    },
-    faviconStyle: {
-      type: OptionType.SELECT,
-      label: "标签页图标样式",
-      description: "状态点的样式。",
-      options: [
-        { value: "dot", label: "彩色圆点" },
-        { value: "badge", label: "徽标 + 符号" }
-      ],
-      default: "dot"
-    }
-  });
-  function tintsButton() {
-    return Boolean(app.manager?.isEnabled?.("GrokState") && settings3.store.buttonStyle !== "none");
-  }
-  var KIND_COLOR = { rotate: "#3B82F6", done: "#22C55E", ready: "#F59E0B", error: "#EF4444" };
-  var X_MARK = "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z";
-  var xTile = () => `<rect width="64" height="64" rx="12" fill="#000"/><g transform="translate(12 12) scale(1.6667)" fill="#fff"><path d="${X_MARK}"/></g>`;
-  var svgData = (inner) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">${inner}</svg>`)}`;
-  function glyph(kind2) {
-    if (kind2 === "rotate") return '<g transform="translate(50 50)"><g><path d="M0-6.1 A6.1 6.1 0 1 1 -5.3 3.05" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="0.85s" repeatCount="indefinite"/></g></g>';
-    if (kind2 === "done") return '<path d="M45 50.2 L48.6 53.8 L55.2 46" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>';
-    if (kind2 === "ready") return '<path d="M50 55V45M45.2 49.8 50 45l4.8 4.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
-    return '<path d="M45.8 45.8 54.2 54.2M54.2 45.8 45.8 54.2" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>';
-  }
-  function iconFor(style, kind2) {
-    const color = KIND_COLOR[kind2];
-    if (!color) return "";
-    if (style === "badge") return svgData(`${xTile()}<circle cx="50" cy="50" r="13" fill="#000"/><circle cx="50" cy="50" r="10.5" fill="${color}"/>${glyph(kind2)}`);
-    return svgData(`${xTile()}<circle cx="51" cy="51" r="11.5" fill="#000"/><circle cx="51" cy="51" r="8.5" fill="${color}"/>`);
-  }
-  var kind = "wait";
-  var streaming = false;
-  var finished = null;
-  function composerText(doc) {
-    for (const root of grokRoots(doc)) {
-      const field3 = getComposer(root);
-      if (field3 && /\S/.test(readValue(field3).replace(/​/g, ""))) return true;
-    }
-    return false;
-  }
-  function hasConversation(doc) {
-    return grokRoots(doc).some((root) => getMessages(root).length > 0);
-  }
-  function nextKind({ streaming: live2, finished: last2, typed, conversation }) {
-    if (live2) return "rotate";
-    if (typed) return "ready";
-    if (last2 && conversation !== false) return last2;
-    return "wait";
-  }
-  function apply(doc = app.doc) {
-    const typed = composerText(doc);
-    if (finished && !streaming && typed) finished = null;
-    const conversation = grokRoots(doc).length ? hasConversation(doc) : null;
-    if (finished && conversation === false) finished = null;
-    const next = nextKind({ streaming, finished, typed, conversation });
-    if (next !== kind) kind = next;
-    paint2(doc);
-  }
-  function paintButton(doc) {
-    const style = settings3.store.buttonStyle;
-    const value = style !== "none" && KIND_COLOR[kind] ? kind : "";
-    for (const drawer of doc.querySelectorAll(DRAWER)) {
-      if (value && !getComposer(drawer)) {
-        if (drawer.getAttribute(STATE) !== value) drawer.setAttribute(STATE, value);
-        if (drawer.getAttribute(STYLE) !== style) drawer.setAttribute(STYLE, style);
-      } else {
-        drawer.removeAttribute(STATE);
-        drawer.removeAttribute(STYLE);
-      }
-    }
-  }
-  function paintFavicon(doc) {
-    const href = settings3.store.favicon ? iconFor(settings3.store.faviconStyle, kind) : "";
-    let link2 = doc.getElementById(ICON_ID);
-    if (!href) {
-      link2?.remove();
-      return;
-    }
-    const head2 = doc.head;
-    if (!head2) return;
-    if (!link2) {
-      link2 = doc.createElement("link");
-      link2.id = ICON_ID;
-      link2.rel = "icon";
-      link2.type = "image/svg+xml";
-      link2.setAttribute("sizes", "any");
-    }
-    if (link2.getAttribute("href") !== href) link2.setAttribute("href", href);
-    if (head2.lastElementChild !== link2) head2.appendChild(link2);
-  }
-  function paint2(doc) {
-    paintButton(doc);
-    paintFavicon(doc);
-  }
-  function onStream(detail, doc = app.doc) {
-    if (detail.phase === "start") {
-      streaming = true;
-      finished = null;
-    } else {
-      streaming = false;
-      finished = detail.cancelled ? null : detail.ok === false ? "error" : "done";
-    }
-    apply(doc);
-  }
-  var offStreams = null;
-  var offGrok = null;
-  var headObserver = null;
-  var onInput = (event) => {
-    if (event.target?.closest?.('[data-testid="GrokDrawer"], main')) apply();
-  };
-  var EMOJI = { rotate: "🔄", done: "✔️", ready: "👍", error: "🚫" };
-  var MARK = ':is([data-testid="GrokDrawerHeader"] > button:only-child > svg, button[data-testid="GrokDrawerHeader"] > svg)';
-  var sel = (style, k, tail = "") => `${DRAWER}[${STYLE}="${style}"][${STATE}="${k}"]${tail}`;
-  var glyphUrl = (k, c) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="37 37 26 26"><circle cx="50" cy="50" r="12.5" fill="#000"/><circle cx="50" cy="50" r="10.5" fill="${c}"/>${glyph(k)}</svg>`)}")`;
-  var BUTTON_CSS = Object.entries(KIND_COLOR).map(([k, c]) => [
-    `${sel("hole", k)} ${MARK}{color:${c}!important;fill:${c}!important;transition:color .2s,fill .2s}`,
-    `${sel("bg", k)} > div:first-child{background-color:${c}!important}`,
-    `${sel("bg", k)} ${MARK}{color:#fff!important;fill:#fff!important}`,
-    `${sel("dot", k, "::after")},${sel("badge", k, "::after")},${sel("original", k, "::after")}{content:"";position:absolute;z-index:2;pointer-events:none}`,
-    `${sel("dot", k, "::after")}{top:6px;right:6px;width:10px;height:10px;border-radius:50%;background:${c};box-shadow:0 0 0 2px #000}`,
-    `${sel("badge", k, "::after")}{top:3px;right:3px;width:18px;height:18px;background:${glyphUrl(k, c)} center/contain no-repeat}`,
-    `${sel("original", k)} ${MARK}{opacity:0!important}`,
-    `${sel("original", k, "::after")}{content:"${EMOJI[k]}";inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1}`
-  ].join("")).join("") + `${DRAWER}[${STYLE}="hole"][${STATE}="rotate"] ${MARK},${DRAWER}[${STYLE}="bg"][${STATE}="rotate"] > div:first-child,${DRAWER}[${STYLE}="dot"][${STATE}="rotate"]::after{animation:askx-grok-pulse 1.2s ease-in-out infinite}@keyframes askx-grok-pulse{0%,100%{opacity:1}50%{opacity:.45}}@media (prefers-reduced-motion: reduce){${DRAWER}[${STATE}] *,${DRAWER}[${STATE}]::after{animation:none!important}}`;
-  var CSS = BUTTON_CSS;
-  var grokState_default = definePlugin({
-    name: "GrokState",
-    description: "Grok 的状态显示在 Grok 按钮上（小窗收起时）：回复中蓝、完成绿、待发送黄、出错红，样式和 Void++ 一致可选（默认 Grok 标志变色）。可选在 X 标签页图标上加状态点（默认关闭，不替换 X 图标）。",
-    icon: ICONS.tabIcon,
-    tags: ["notifications"],
-    enabledByDefault: true,
-    settings: settings3,
-    start() {
-      const doc = app.doc;
-      kind = "wait";
-      streaming = false;
-      finished = null;
-      addStyle(doc, STYLE_ID2, CSS);
-      offStreams = watchStreams(doc, (detail) => onStream(detail, doc));
-      offGrok = watchGrok(doc, () => apply(doc));
-      doc.addEventListener("input", onInput, true);
-      headObserver = new doc.defaultView.MutationObserver(() => {
-        if (doc.getElementById(ICON_ID)) paintFavicon(doc);
-      });
-      if (doc.head) headObserver.observe(doc.head, { childList: true });
-      apply(doc);
-    },
-    onSettingsChange: () => paint2(app.doc),
-    stop() {
-      const doc = app.doc;
-      offStreams?.();
-      offGrok?.();
-      offStreams = null;
-      offGrok = null;
-      headObserver?.disconnect();
-      headObserver = null;
-      doc.removeEventListener("input", onInput, true);
-      doc.getElementById(ICON_ID)?.remove();
-      doc.getElementById(STYLE_ID2)?.remove();
-      for (const el2 of doc.querySelectorAll(`[${STATE}]`)) {
-        el2.removeAttribute(STATE);
-        el2.removeAttribute(STYLE);
-      }
-      kind = "wait";
-    }
-  });
-
-  // src/plugins/completeToast.js
-  var settings4 = definePluginSettings({
-    keep: {
-      type: OptionType.BOOLEAN,
-      label: "一直显示",
-      description: "“回复完成”提示不自动消失，点 × 或打开 Grok 小窗才关闭。",
-      default: true
-    },
-    seconds: {
-      type: OptionType.SLIDER,
-      label: "显示秒数",
-      description: "关闭“一直显示”时，提示停留的秒数。",
-      min: 2,
-      max: 30,
-      default: 8
-    },
-    preview: {
-      type: OptionType.BOOLEAN,
-      label: "回复预览",
-      description: "在提示里显示回复开头的一小段（小窗展开着才能读到）。",
-      default: true
-    }
-  });
-  var PREVIEW_CHARS = 80;
-  var THINKING = /^(thoughts?|thinking…?|thought for .*|思考中?…?|已思考.*|想了.*)$/i;
-  function replyPreview(doc = app.doc, max = PREVIEW_CHARS) {
-    for (const root of grokRoots(doc)) {
-      const last2 = getMessages(root).filter((m) => m.role === "assistant").pop();
-      if (!last2) continue;
-      const text = (last2.el.innerText || last2.el.textContent || "").split("\n").map((l) => l.trim()).filter((l) => l && !THINKING.test(l)).join(" ").replace(/\s+/g, " ").trim();
-      if (text) return text.length > max ? `${text.slice(0, max)}…` : text;
-    }
-    return "";
-  }
-  function toastOptions(doc = app.doc) {
-    if (!app.manager?.isEnabled?.("CompleteToast")) return null;
-    const { keep, seconds, preview } = settings4.store;
-    return {
-      duration: keep ? 0 : Math.max(2, seconds) * 1e3,
-      closable: true,
-      detail: preview ? replyPreview(doc) : "",
-      // Shown even with the tab in the background, so it is there on return.
-      whileHidden: keep
-    };
-  }
-  var stopWatch = null;
-  var wasOpen = false;
-  var completeToast_default = definePlugin({
-    name: "CompleteToast",
-    description: "Grok“回复完成”的页面提示一直显示，直到点 × 或打开小窗；还能显示回复开头的一小段（移植自 void++）。",
-    icon: ICONS.bellRing,
-    tags: ["notifications"],
-    enabledByDefault: true,
-    settings: settings4,
-    start() {
-      wasOpen = isDrawerOpen(app.doc);
-      stopWatch = watchGrok(app.doc, (doc) => {
-        const open2 = isDrawerOpen(doc);
-        if (open2 && !wasOpen) doc.querySelector(".askx-toast[data-reply-done]")?.remove();
-        wasOpen = open2;
-      });
-    },
-    stop() {
-      stopWatch?.();
-      stopWatch = null;
-    }
-  });
-
-  // src/plugins/composerOpacity.js
-  var MARK2 = "data-askx-composer";
-  var STYLE_ID3 = "askx-composer-opacity";
-  var settings5 = definePluginSettings({
-    opacity: {
-      type: OptionType.SLIDER,
-      label: "不透明度",
-      description: "输入框背景的不透明度，100 为完全不透明。",
-      min: 0,
-      max: 100,
-      default: 100
-    },
-    blur: {
-      type: OptionType.SLIDER,
-      label: "背景模糊（px）",
-      description: "不透明度低于 100 时，模糊输入框后面的内容。",
-      min: 0,
-      max: 40,
-      default: 16
-    }
-  });
-  var isClear = (bg) => !bg || bg === "transparent" || /rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg);
-  function findComposerBox(root) {
-    const field3 = getComposer(root);
-    if (!field3) return null;
-    const view = root.ownerDocument.defaultView;
-    for (let node2 = field3.parentElement; node2 && node2 !== root; node2 = node2.parentElement) {
-      const style = view.getComputedStyle(node2);
-      if (!isClear(style.backgroundColor) && parseFloat(style.borderTopLeftRadius || style.borderRadius) > 0) return node2;
-    }
-    return null;
-  }
-  function rgbOf(color) {
-    const m = String(color).match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
-    return m ? `${Math.round(m[1])}, ${Math.round(m[2])}, ${Math.round(m[3])}` : null;
-  }
-  var observer2 = null;
-  var schedule2 = null;
-  function apply2(doc = app.doc) {
-    const { opacity, blur } = settings5.store;
-    let count = 0;
-    for (const root of grokRoots(doc)) {
-      const box = findComposerBox(root);
-      if (!box) continue;
-      if (!box.hasAttribute(MARK2)) {
-        const rgb = rgbOf(doc.defaultView.getComputedStyle(box).backgroundColor);
-        if (!rgb) continue;
-        box.style.setProperty("--askx-composer-rgb", rgb);
-        box.setAttribute(MARK2, "");
-      }
-      count += 1;
-    }
-    const style = doc.getElementById(STYLE_ID3);
-    if (style) {
-      const alpha = Math.min(100, Math.max(0, opacity)) / 100;
-      const frost = alpha < 1 && blur > 0 ? `-webkit-backdrop-filter:blur(${blur}px)!important;backdrop-filter:blur(${blur}px)!important;` : "";
-      const text = alpha >= 1 ? "" : `[${MARK2}]{background-color:rgba(var(--askx-composer-rgb),${alpha})!important;${frost}}`;
-      if (style.textContent !== text) style.textContent = text;
-    }
-    return count;
-  }
-  var composerOpacity_default = definePlugin({
-    name: "ComposerOpacity",
-    description: "调整 Grok 输入框背景的不透明度和模糊程度（移植自 void++）。",
-    icon: ICONS.blend,
-    tags: ["composer", "appearance"],
-    enabledByDefault: true,
-    settings: settings5,
-    start() {
-      const doc = app.doc;
-      if (!doc.getElementById(STYLE_ID3)) {
-        const style = doc.createElement("style");
-        style.id = STYLE_ID3;
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      schedule2 = timeThrottle(doc.defaultView, () => apply2(doc), 200);
-      apply2(doc);
-      observer2 = new doc.defaultView.MutationObserver((records) => {
-        if (touchesGrok(records, doc)) schedule2();
-      });
-      observer2.observe(doc.body, { childList: true, subtree: true });
-    },
-    onSettingsChange: () => apply2(),
-    stop() {
-      observer2?.disconnect();
-      observer2 = null;
-      schedule2?.cancel();
-      for (const box of app.doc.querySelectorAll(`[${MARK2}]`)) {
-        box.removeAttribute(MARK2);
-        box.style.removeProperty("--askx-composer-rgb");
-      }
-      app.doc.getElementById(STYLE_ID3)?.remove();
-    }
-  });
-
-  // src/plugins/customGreeting.js
-  var MARK3 = "data-askx-greet";
-  var PH_MARK = "data-askx-greet-ph";
-  var STYLE_ID4 = "askx-greeting";
-  var MIN_FONT = 20;
-  var DEFAULT_PHRASES = [
-    "今天想弄明白点什么？",
-    "划一段文字，问问 Grok。",
-    "好问题，值得一个好答案。"
-  ].join("\n");
-  var settings6 = definePluginSettings({
-    phrases: {
-      type: OptionType.STRING,
-      multiline: true,
-      allowEmpty: true,
-      label: "问候语",
-      description: "每行一句。留空则保留 Grok 自己的问候语。",
-      default: DEFAULT_PHRASES
-    },
-    mode: {
-      type: OptionType.SELECT,
-      label: "切换时机",
-      description: "什么时候换下一句。",
-      options: [
-        { value: "refresh", label: "每次新对话" },
-        { value: "interval", label: "定时切换" },
-        { value: "manual", label: "点击问候语" }
-      ],
-      default: "refresh"
-    },
-    order: {
-      type: OptionType.SELECT,
-      label: "顺序",
-      description: "按列表顺序还是随机挑一句。",
-      options: [
-        { value: "sequential", label: "顺序" },
-        { value: "random", label: "随机" }
-      ],
-      default: "sequential"
-    },
-    intervalSec: {
-      type: OptionType.SLIDER,
-      label: "切换间隔（秒）",
-      description: "“定时切换”时每隔多少秒换一句。",
-      min: 1,
-      max: 3600,
-      default: 10
-    },
-    placeholder: {
-      type: OptionType.BOOLEAN,
-      label: "替换输入框提示",
-      description: "同时把输入框里的灰色提示（Ask anything）换成当前这句问候语。",
-      default: false
-    }
-  });
-  function parsePhrases(raw) {
-    return String(raw ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
-  }
-  var observer3 = null;
-  var timer2 = 0;
-  var index = -1;
-  var schedule3 = null;
-  var shownOnce = false;
-  var seen = /* @__PURE__ */ new WeakSet();
-  function phrases() {
-    return parsePhrases(settings6.store.phrases);
-  }
-  function nextIndex(current2, count, order, random = Math.random) {
-    if (count <= 1) return 0;
-    if (order === "random") {
-      let next = current2;
-      while (next === current2) next = Math.floor(random() * count);
-      return next;
-    }
-    return (current2 + 1) % count;
-  }
-  function current() {
-    const list = phrases();
-    if (!list.length) return "";
-    if (index < 0 || index >= list.length) index = 0;
-    return list[index];
-  }
-  function rotate() {
-    const list = phrases();
-    index = nextIndex(index, list.length, settings6.store.order);
-    paint3();
-  }
-  function findGreeting(root) {
-    if (getMessages(root).length) return null;
-    const view = root.ownerDocument.defaultView;
-    const composer = getComposer(root);
-    const painted = root.querySelector(`[${MARK3}]`);
-    if (painted && !(composer && (painted.contains(composer) || composer.contains(painted))) && parseFloat(painted.style.getPropertyValue("--askx-greet-size")) >= MIN_FONT) return painted;
-    for (const el2 of root.querySelectorAll("span, h1, h2, div[dir]")) {
-      if (el2.childElementCount || !el2.textContent.trim()) continue;
-      if (composer && (el2.contains(composer) || composer.contains(el2))) continue;
-      if (el2.closest('button, [role="button"], a')) continue;
-      if (parseFloat(view.getComputedStyle(el2).fontSize) < MIN_FONT) continue;
-      const heading = el2.closest("h1, h2, h3");
-      return heading && root.contains(heading) ? heading : el2;
-    }
-    return null;
-  }
-  function css() {
-    return `[${MARK3}]{font-size:0!important;white-space:normal!important}[${MARK3}]>*{display:none!important}[${MARK3}]::after{content:attr(${MARK3});display:inline-block;max-width:100%;font-size:var(--askx-greet-size,26px);line-height:1.3;white-space:normal;overflow-wrap:anywhere;text-wrap:balance}[${MARK3}][data-askx-greet-click]{cursor:pointer}`;
-  }
-  function clearMarks(doc) {
-    for (const el2 of doc.querySelectorAll(`[${MARK3}]`)) {
-      el2.removeAttribute(MARK3);
-      el2.removeAttribute("data-askx-greet-click");
-      el2.style.removeProperty("--askx-greet-size");
-    }
-    for (const el2 of doc.querySelectorAll(`[${PH_MARK}]`)) {
-      el2.setAttribute("placeholder", el2.getAttribute(PH_MARK));
-      el2.removeAttribute(PH_MARK);
-    }
-  }
-  function onClick3(event) {
-    if (settings6.store.mode !== "manual") return;
-    if (!event.target.closest?.(`[${MARK3}]`)) return;
-    event.preventDefault();
-    rotate();
-  }
-  function paint3(doc = app.doc) {
-    const text = current();
-    let painted = 0;
-    const titles = /* @__PURE__ */ new Set();
-    for (const root of grokRoots(doc)) {
-      const title = findGreeting(root);
-      if (title && text) {
-        titles.add(title);
-        if (!seen.has(title)) {
-          seen.add(title);
-          if (shownOnce && settings6.store.mode === "refresh") index = nextIndex(index, phrases().length, settings6.store.order);
-          shownOnce = true;
-        }
-        const phrase = current();
-        if (!title.hasAttribute(MARK3)) title.style.setProperty("--askx-greet-size", doc.defaultView.getComputedStyle(title).fontSize);
-        if (title.getAttribute(MARK3) !== phrase) title.setAttribute(MARK3, phrase);
-        if (settings6.store.mode === "manual") title.setAttribute("data-askx-greet-click", "");
-        else title.removeAttribute("data-askx-greet-click");
-        painted += 1;
-      }
-      const composer = getComposer(root);
-      if (composer && composer.tagName === "TEXTAREA") {
-        if (settings6.store.placeholder && text) {
-          if (!composer.hasAttribute(PH_MARK)) composer.setAttribute(PH_MARK, composer.getAttribute("placeholder") || "");
-          if (composer.getAttribute("placeholder") !== current()) composer.setAttribute("placeholder", current());
-        } else if (composer.hasAttribute(PH_MARK)) {
-          composer.setAttribute("placeholder", composer.getAttribute(PH_MARK));
-          composer.removeAttribute(PH_MARK);
-        }
-      }
-    }
-    for (const el2 of doc.querySelectorAll(`[${MARK3}]`)) {
-      if (titles.has(el2)) continue;
-      el2.removeAttribute(MARK3);
-      el2.removeAttribute("data-askx-greet-click");
-      el2.style.removeProperty("--askx-greet-size");
-    }
-    return painted;
-  }
-  function restartTimer() {
-    const view = app.doc.defaultView;
-    view.clearInterval(timer2);
-    timer2 = 0;
-    if (settings6.store.mode === "interval") timer2 = view.setInterval(rotate, Math.max(1, settings6.store.intervalSec) * 1e3);
-  }
-  var customGreeting_default = definePlugin({
-    name: "CustomGreeting",
-    description: "把 Grok 空对话的问候语（How can I help you today?）换成你自己的句子，可以每次新对话、定时或点击时轮换（移植自 void++）。",
-    icon: ICONS.greeting,
-    tags: ["appearance"],
-    enabledByDefault: true,
-    settings: settings6,
-    start() {
-      const doc = app.doc;
-      if (!doc.getElementById(STYLE_ID4)) {
-        const style = doc.createElement("style");
-        style.id = STYLE_ID4;
-        style.textContent = css();
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      index = settings6.store.order === "random" ? nextIndex(-1, phrases().length, "random") : 0;
-      shownOnce = false;
-      schedule3 = timeThrottle(doc.defaultView, () => paint3(doc), 100);
-      paint3(doc);
-      observer3 = new doc.defaultView.MutationObserver((records) => {
-        if (touchesGrok(records, doc)) schedule3();
-      });
-      observer3.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["placeholder"] });
-      doc.addEventListener("click", onClick3, true);
-      restartTimer();
-    },
-    onSettingsChange() {
-      clearMarks(app.doc);
-      restartTimer();
-      paint3(app.doc);
-    },
-    stop() {
-      observer3?.disconnect();
-      observer3 = null;
-      schedule3?.cancel();
-      app.doc.defaultView.clearInterval(timer2);
-      app.doc.removeEventListener("click", onClick3, true);
-      clearMarks(app.doc);
-      app.doc.getElementById(STYLE_ID4)?.remove();
-    }
-  });
-
-  // src/plugins/drawerHeight.js
-  var MARK4 = "data-askx-height";
-  var STYLE_ID5 = "askx-drawer-height";
-  var LAYER = "data-askx-height-layer";
-  var TOP_GAP = 8;
-  var EDGE_GAP = 8;
-  var FULL_V_GAP = 0;
-  var settings7 = definePluginSettings({
-    preset: {
-      type: OptionType.SELECT,
-      label: "弹窗高度",
-      description: "“完整侧边栏”从窗口顶部一直到底部；“X 默认”不做改动。",
-      options: [
-        { value: "sidebar", label: "完整侧边栏" },
-        { value: "custom", label: "自定义" },
-        { value: "x", label: "X 默认" }
-      ],
-      default: "sidebar"
-    },
-    height: {
-      type: OptionType.SLIDER,
-      label: "自定义高度（px）",
-      description: "选“自定义”时使用；超过窗口时自动缩到窗口高度。",
-      min: 300,
-      max: 1600,
-      default: 640
-    }
-  });
-  function targetHeight({ preset, height }, drawerBottom, viewHeight = drawerBottom) {
-    const room = Math.max(0, Math.round(drawerBottom - TOP_GAP));
-    if (preset === "sidebar") return Math.max(0, Math.round(viewHeight - 2 * FULL_V_GAP));
-    if (preset === "custom") return Math.min(room, Math.max(300, Math.round(height)));
-    return 0;
-  }
-  function layerOf(drawer) {
-    return drawer.parentElement?.parentElement || null;
-  }
-  function clear2(drawer) {
-    drawer.removeAttribute(MARK4);
-    for (const prop of ["--askx-drawer-h", "--askx-drawer-shift", "--askx-drawer-mr", "--askx-drawer-w"]) drawer.style.removeProperty(prop);
-    layerOf(drawer)?.removeAttribute(LAYER);
-  }
-  var observer4 = null;
-  var schedule4 = null;
-  var onResize = null;
-  var settle = 0;
-  var unwatch = null;
-  var sizeObserver = null;
-  var watchSizes = null;
-  function apply3(doc = app.doc) {
-    const drawer = getDrawer(doc);
-    if (!drawer) return 0;
-    const open2 = Boolean(getComposer(drawer));
-    const view = doc.defaultView;
-    const store = settings7.store;
-    const rect = drawer.getBoundingClientRect();
-    const shifted = parseFloat(drawer.style.getPropertyValue("--askx-drawer-shift")) || 0;
-    const bottom = rect.bottom - shifted;
-    const h = open2 ? targetHeight(store, bottom, view.innerHeight) : 0;
-    if (!h) {
-      if (drawer.hasAttribute(MARK4)) clear2(drawer);
-      return 0;
-    }
-    const full = store.preset === "sidebar";
-    const set = (prop, value) => {
-      if (drawer.style.getPropertyValue(prop) !== value) drawer.style.setProperty(prop, value);
-    };
-    set("--askx-drawer-h", `${h}px`);
-    if (full) {
-      const now = drawer.getBoundingClientRect();
-      if (drawer.hasAttribute(MARK4)) set("--askx-drawer-shift", `${Math.round(shifted + FULL_V_GAP - now.top)}px`);
-      else set("--askx-drawer-shift", `${Math.round(view.innerHeight - FULL_V_GAP - bottom)}px`);
-    } else {
-      set("--askx-drawer-shift", "0px");
-    }
-    set("--askx-drawer-mr", full ? `${EDGE_GAP}px` : "");
-    const side = full ? doc.querySelector('[data-testid="sidebarColumn"]')?.getBoundingClientRect() : null;
-    const right = doc.documentElement.clientWidth - EDGE_GAP;
-    set("--askx-drawer-w", side?.width ? `${Math.round(right - (side.left - EDGE_GAP))}px` : "");
-    if (!drawer.hasAttribute(MARK4)) {
-      drawer.setAttribute(MARK4, "");
-      if (full) schedule4?.();
-    }
-    const layer = layerOf(drawer);
-    if (layer) {
-      if (full && !layer.hasAttribute(LAYER)) layer.setAttribute(LAYER, "");
-      else if (!full && layer.hasAttribute(LAYER)) layer.removeAttribute(LAYER);
-    }
-    return h;
-  }
-  function reset(doc) {
-    for (const el2 of doc.querySelectorAll(`[${MARK4}]`)) clear2(el2);
-    for (const el2 of doc.querySelectorAll(`[${LAYER}]`)) el2.removeAttribute(LAYER);
-  }
-  var drawerHeight_default = definePlugin({
-    name: "DrawerHeight",
-    description: "调整 Grok 小窗的高度。默认拉满整个右侧边栏，也可以自定义高度或保持 X 默认。",
-    icon: ICONS.height,
-    tags: ["appearance"],
-    enabledByDefault: true,
-    settings: settings7,
-    start() {
-      const doc = app.doc;
-      const view = doc.defaultView;
-      if (!doc.getElementById(STYLE_ID5)) {
-        const style = doc.createElement("style");
-        style.id = STYLE_ID5;
-        style.textContent = `[${MARK4}]{height:var(--askx-drawer-h)!important;max-height:none!important;top:var(--askx-drawer-shift,0px)!important}[${MARK4}][style*="--askx-drawer-mr"]{margin-right:var(--askx-drawer-mr)!important}[${MARK4}][style*="--askx-drawer-w"]{width:var(--askx-drawer-w)!important;max-width:none!important}[${MARK4}]>div:first-child{height:100%!important;min-height:100%!important;max-height:none!important}[${LAYER}]{z-index:1!important}`;
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      schedule4 = frameThrottle(view, () => apply3(doc));
-      apply3(doc);
-      observer4 = new view.MutationObserver((records) => {
-        if (touchesGrok(records, doc)) {
-          schedule4();
-          watchSizes?.();
-        }
-      });
-      observer4.observe(doc.body, { childList: true, subtree: true });
-      onResize = () => {
-        schedule4();
-        view.clearTimeout(settle);
-        settle = view.setTimeout(() => apply3(doc), 400);
-      };
-      const onMoved = (event) => {
-        if (event.propertyName === "transform" || event.propertyName === "top") schedule4();
-      };
-      let watched = null;
-      let watchedNodes = [];
-      sizeObserver = typeof view.ResizeObserver === "function" ? new view.ResizeObserver(() => onResize()) : null;
-      watchSizes = () => {
-        const drawer = getDrawer(doc);
-        if (drawer === watched) return;
-        watched = drawer;
-        for (const node2 of watchedNodes) node2.removeEventListener("transitionend", onMoved);
-        watchedNodes = [];
-        sizeObserver?.disconnect();
-        if (!drawer) return;
-        const layer = layerOf(drawer);
-        for (let node2 = drawer.parentElement; node2 && node2 !== doc.body; node2 = node2.parentElement) {
-          node2.addEventListener("transitionend", onMoved);
-          watchedNodes.push(node2);
-          if (node2 === layer?.parentElement) break;
-        }
-        if (drawer.parentElement) sizeObserver?.observe(drawer.parentElement);
-      };
-      unwatch = () => {
-        for (const node2 of watchedNodes) node2.removeEventListener("transitionend", onMoved);
-        watchedNodes = [];
-      };
-      watchSizes();
-      view.addEventListener("resize", onResize);
-      view.visualViewport?.addEventListener("resize", onResize);
-    },
-    onSettingsChange: () => apply3(),
-    stop() {
-      observer4?.disconnect();
-      observer4 = null;
-      const view = app.doc.defaultView;
-      if (onResize) {
-        view.removeEventListener("resize", onResize);
-        view.visualViewport?.removeEventListener("resize", onResize);
-      }
-      view.clearTimeout(settle);
-      unwatch?.();
-      unwatch = null;
-      sizeObserver?.disconnect();
-      sizeObserver = null;
-      watchSizes = null;
-      onResize = null;
-      schedule4?.cancel();
-      reset(app.doc);
-      app.doc.getElementById(STYLE_ID5)?.remove();
-    }
-  });
-
-  // src/plugins/followUp.js
-  var DEFAULT_FOLLOW_UP = "{quote}\n\n";
-  var settings8 = definePluginSettings({
-    template: {
-      type: OptionType.STRING,
-      multiline: true,
-      label: "追问模板",
-      description: "占位符：{text} 原文、{quote} 每行加 > 的原文。写在输入框已有内容的后面。",
-      default: DEFAULT_FOLLOW_UP
-    }
-  });
-  var followUp_default = definePlugin({
-    name: "FollowUp",
-    description: "在 Grok 小窗（或 Grok 全页）里划选回复中的文字，点“追问”把它引用到当前对话的输入框，接着问。",
-    icon: ICONS.followUp,
-    tags: ["composer", "messages"],
-    enabledByDefault: true,
-    settings: settings8,
-    askOrder: 40,
-    toolbarButtons: () => [{ id: "follow-up", label: "追问", icon: ICONS.followUp, className: "askx-main", contexts: ["grok"], order: 0 }],
-    onAsk(ctx2) {
-      if (ctx2.trigger.id === "follow-up") ctx2.template = settings8.store.template;
-    }
-  });
-
-  // src/plugins/grokScrollbars.js
-  var STYLE_ID6 = "askx-grok-scrollbars";
-  var settings9 = definePluginSettings({
-    width: {
-      type: OptionType.SELECT,
-      label: "粗细",
-      description: "“细”是浏览器的细滚动条；“隐藏”不显示滚动条，仍可用滚轮和触控板滚动。",
-      options: [
-        { value: "thin", label: "细" },
-        { value: "none", label: "隐藏" }
-      ],
-      default: "thin"
-    }
-  });
-  function css2({ width } = settings9.store) {
-    const scope = `${GROK}, ${GROK} *, html[${PAGE_FLAG}]`;
-    if (width === "none") return `:is(${scope}){scrollbar-width:none!important}`;
-    return `:is(${scope}){scrollbar-width:thin!important;scrollbar-color:rgba(128,134,139,.45) transparent!important}:is(${scope}):hover{scrollbar-color:rgba(128,134,139,.7) transparent!important}`;
-  }
-  var stop3 = null;
-  var grokScrollbars_default = definePlugin({
-    name: "GrokScrollbars",
-    description: "Grok 小窗和 Grok 页面里的滚动条去掉灰色导轨，只留一条细的圆角滑块，悬停时稍微加深。不影响 X 其他页面的滚动条。",
-    icon: ICONS.scrollbar,
-    tags: ["appearance"],
-    enabledByDefault: true,
-    settings: settings9,
-    start() {
-      addStyle(app.doc, STYLE_ID6, css2());
-      stop3 = watchGrok(app.doc);
-    },
-    onSettingsChange: () => addStyle(app.doc, STYLE_ID6, css2()),
-    stop() {
-      stop3?.();
-      stop3 = null;
-      app.doc.getElementById(STYLE_ID6)?.remove();
-    }
-  });
-
-  // src/plugins/hideFollowUps.js
-  var MARK5 = "data-askx-hidden-followups";
-  var STYLE_ID7 = "askx-hide-followups";
-  var settings10 = definePluginSettings({
-    keepLatest: {
-      type: OptionType.BOOLEAN,
-      label: "保留最新消息的猜你想问",
-      description: "只隐藏较早回复下的建议问题，最新一条回复下的照常显示。",
-      default: true
-    }
-  });
-  var buttonsOf = (el2) => [...el2.querySelectorAll('button, [role="button"]')];
-  function isActionBar(el2) {
-    const buttons = buttonsOf(el2);
-    return buttons.length >= 3 && !el2.textContent.trim() && buttons.every((b) => b.getAttribute("aria-label"));
-  }
-  function isFollowUpBlock(el2) {
-    const buttons = buttonsOf(el2);
-    return buttons.length >= 1 && buttons.every((b) => !b.getAttribute("aria-label") && b.querySelector("svg") && b.textContent.trim()) && Boolean(el2.previousElementSibling && isActionBar(el2.previousElementSibling));
-  }
-  function findFollowUps(root) {
-    const list = messageList(root);
-    if (!list) return [];
-    const out = [];
-    for (const bar2 of list.querySelectorAll("div")) {
-      if (!isActionBar(bar2)) continue;
-      const next = bar2.nextElementSibling;
-      if (next && isFollowUpBlock(next)) out.push(next);
-    }
-    return out;
-  }
-  function hideAll(doc = app.doc, keepLatest = settings10.store.keepLatest) {
-    const hidden = /* @__PURE__ */ new Set();
-    for (const root of grokRoots(doc)) {
-      const blocks = findFollowUps(root);
-      const keep = keepLatest ? blocks[blocks.length - 1] : null;
-      for (const block of blocks) if (block !== keep) hidden.add(block);
-    }
-    for (const block of hidden) if (!block.hasAttribute(MARK5)) block.setAttribute(MARK5, "");
-    for (const el2 of doc.querySelectorAll(`[${MARK5}]`)) if (!hidden.has(el2)) el2.removeAttribute(MARK5);
-    return hidden.size;
-  }
-  var stop4 = null;
-  var hideFollowUps_default = definePlugin({
-    name: "HideFollowUps",
-    description: "隐藏 Grok 回复下方的“猜你想问”建议问题；默认保留最新一条回复下的。关闭插件时这些问题照常显示（并由 NoSideScroll 自动换行）。",
-    icon: ICONS.eyeOff,
-    tags: ["declutter"],
-    enabledByDefault: true,
-    settings: settings10,
-    onSettingsChange: () => hideAll(app.doc),
-    start() {
-      addStyle(app.doc, STYLE_ID7, `[${MARK5}]{display:none!important}`);
-      stop4 = watchGrok(app.doc, hideAll);
-    },
-    stop() {
-      stop4?.();
-      stop4 = null;
-      app.doc.getElementById(STYLE_ID7)?.remove();
-      for (const el2 of app.doc.querySelectorAll(`[${MARK5}]`)) el2.removeAttribute(MARK5);
-    }
-  });
-
-  // src/replyBold.js
-  var VIEW = "askx-rb";
-  var SOURCE = "data-askx-rb-src";
-  var STYLE_ID8 = "askx-reply-bold-style";
-  var SKIP3 = 'code, pre, textarea, [contenteditable="true"], .askx-um, .askx-rb';
-  var PAIR = /\*\*(?=\S)([^*\n]+?)\*\*/g;
-  function findBold(text) {
-    const out = [];
-    for (const m of String(text).matchAll(PAIR)) {
-      if (/\s$/.test(m[1])) continue;
-      out.push({ start: m.index, end: m.index + m[0].length });
-    }
-    return out;
-  }
-  function boldTextNode(doc, node2) {
-    const text = node2.nodeValue;
-    const pairs = findBold(text);
-    if (!pairs.length) return false;
-    const frag = doc.createDocumentFragment();
-    let at = 0;
-    for (const { start: start2, end } of pairs) {
-      if (start2 > at) frag.appendChild(doc.createTextNode(text.slice(at, start2)));
-      const strong = doc.createElement("strong");
-      strong.textContent = text.slice(start2 + 2, end - 2);
-      frag.appendChild(strong);
-      at = end;
-    }
-    if (at < text.length) frag.appendChild(doc.createTextNode(text.slice(at)));
-    node2.parentNode.replaceChild(frag, node2);
-    return true;
-  }
-  function textNodesWithPairs(doc, el2) {
-    const walker = doc.createTreeWalker(el2, 4, {
-      acceptNode: (n) => n.nodeValue.includes("**") && !n.parentElement?.closest(SKIP3) && findBold(n.nodeValue).length ? 1 : 3
-    });
-    const out = [];
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n);
-    return out;
-  }
-  function blockOf(doc, node2, stop11) {
-    for (let e = node2.parentElement; e && e !== stop11; e = e.parentElement) {
-      if (doc.defaultView.getComputedStyle(e).display !== "inline") return e;
-    }
-    return null;
-  }
-  var viewFor = (block) => {
-    const next = block.nextElementSibling;
-    return next?.classList.contains(VIEW) && next.dataset.src === block.dataset.askxRbId ? next : null;
-  };
-  var nextId = 1;
-  function redraw(doc, block) {
-    const text = block.textContent;
-    let view = viewFor(block);
-    if (view && view.dataset.text === text) return;
-    view?.remove();
-    view = block.cloneNode(true);
-    view.removeAttribute(SOURCE);
-    view.removeAttribute("data-askx-rb-id");
-    for (const n of view.querySelectorAll("[id]")) n.removeAttribute("id");
-    view.removeAttribute("id");
-    let changed = false;
-    for (const n of textNodesWithPairs(doc, view)) changed = boldTextNode(doc, n) || changed;
-    if (!changed) {
-      block.removeAttribute(SOURCE);
-      return;
-    }
-    view.classList.add(VIEW);
-    if (!block.dataset.askxRbId) block.dataset.askxRbId = String(nextId++);
-    view.dataset.src = block.dataset.askxRbId;
-    view.dataset.text = text;
-    block.after(view);
-    block.setAttribute(SOURCE, "");
-  }
-  function paint4(doc) {
-    const blocks = /* @__PURE__ */ new Set();
-    for (const root of grokRoots(doc)) {
-      for (const { el: el2, role } of getMessages(root)) {
-        if (role !== "assistant") continue;
-        for (const n of textNodesWithPairs(doc, el2)) {
-          const block = blockOf(doc, n, el2);
-          if (block) blocks.add(block);
-        }
-        for (const b of el2.querySelectorAll(`[${SOURCE}]`)) blocks.add(b);
-      }
-    }
-    for (const block of blocks) redraw(doc, block);
-    for (const view of doc.querySelectorAll(`.${VIEW}`)) {
-      const prev = view.previousElementSibling;
-      if (!prev || prev.dataset.askxRbId !== view.dataset.src || !prev.hasAttribute(SOURCE)) view.remove();
-    }
-  }
-  var stop5 = null;
-  function startReplyBold(doc) {
-    addStyle(doc, STYLE_ID8, `[${SOURCE}]{display:none!important}.${VIEW} strong{font-weight:700}`);
-    stop5 = watchGrok(doc, paint4);
-    paint4(doc);
-  }
-  function stopReplyBold(doc) {
-    stop5?.();
-    stop5 = null;
-    for (const view of doc.querySelectorAll(`.${VIEW}`)) view.remove();
-    for (const el2 of doc.querySelectorAll(`[${SOURCE}]`)) el2.removeAttribute(SOURCE);
-    doc.getElementById(STYLE_ID8)?.remove();
-  }
-
-  // src/userMessages.js
-  var VIEW2 = "askx-um";
-  var SOURCE2 = "data-askx-um-src";
-  var STYLE_ID9 = "askx-user-messages";
-  var OBSERVE = { childList: true, subtree: true, characterData: true };
-  var transforms = /* @__PURE__ */ new Map();
-  var sourceOf = /* @__PURE__ */ new WeakMap();
-  var observer5 = null;
-  var observedDoc = null;
-  function roots(doc) {
-    const list = [...doc.querySelectorAll(DRAWER)];
-    if (onGrokPage(doc)) {
-      const main = doc.querySelector("main");
-      if (main) list.push(main);
-    }
-    return list;
-  }
-  var isView = (el2) => Boolean(el2?.closest?.(`.${VIEW2}`));
-  function viewFor2(block) {
-    const next = block.nextElementSibling;
-    return next?.classList.contains(VIEW2) && sourceOf.get(next) === block ? next : null;
-  }
-  function build(doc, block, text) {
-    const el2 = block.cloneNode(true);
-    el2.removeAttribute("id");
-    for (const n of el2.querySelectorAll("[id]")) n.removeAttribute("id");
-    el2.removeAttribute(SOURCE2);
-    el2.classList.add(VIEW2);
-    let changed = false;
-    for (const t of [...transforms.values()].sort((a, b) => a.order - b.order)) {
-      try {
-        changed = t.apply(doc, el2, text) || changed;
-      } catch (error) {
-        console.error("[Ask X] message transform failed", error);
-      }
-    }
-    return changed ? el2 : null;
-  }
-  function unhide(block) {
-    block.removeAttribute(SOURCE2);
-    viewFor2(block)?.remove();
-  }
-  function refreshBlock(doc, block) {
-    if (isView(block) || block.closest('textarea, [contenteditable="true"]')) return 0;
-    if (!isUserMessage(block)) return 0;
-    const text = block.textContent;
-    const current2 = viewFor2(block);
-    if (current2 && current2.dataset.text === text) return 0;
-    const next = transforms.size ? build(doc, block, text) : null;
-    if (!next) {
-      if (current2 || block.hasAttribute(SOURCE2)) unhide(block);
-      return 0;
-    }
-    next.dataset.text = text;
-    sourceOf.set(next, block);
-    if (current2) current2.replaceWith(next);
-    else block.after(next);
-    block.setAttribute(SOURCE2, "");
-    return 1;
-  }
-  function sweep(scope) {
-    for (const view of scope.querySelectorAll(`.${VIEW2}`)) {
-      const block = sourceOf.get(view);
-      if (!block || !block.isConnected || block.nextElementSibling !== view) view.remove();
-    }
-  }
-  function refreshAll(doc = app.doc) {
-    let count = 0;
-    for (const root of roots(doc)) {
-      sweep(root);
-      for (const block of root.querySelectorAll("div[dir]")) count += refreshBlock(doc, block);
-    }
-    return count;
-  }
-  function refreshFromMutations(records, doc = app.doc) {
-    const blocks = /* @__PURE__ */ new Set();
-    const scopes = /* @__PURE__ */ new Set();
-    const consider = (node2) => {
-      const el2 = node2?.nodeType === 1 ? node2 : node2?.parentElement;
-      if (!el2 || isView(el2)) return;
-      const root = rootOf(el2, doc);
-      if (!root) {
-        if (node2.nodeType === 1 && (node2.matches?.(DRAWER) || node2.querySelector?.(DRAWER))) {
-          for (const r of roots(doc)) for (const b of r.querySelectorAll("div[dir]")) blocks.add(b);
-        }
-        return;
-      }
-      scopes.add(root);
-      const own = el2.closest("div[dir]");
-      if (own) blocks.add(own);
-      if (node2.nodeType === 1) for (const inner of node2.querySelectorAll("div[dir]")) blocks.add(inner);
-    };
-    for (const record of records) {
-      if (record.type === "characterData") consider(record.target);
-      else {
-        for (const added of record.addedNodes) consider(added);
-        if (record.removedNodes?.length) {
-          const root = rootOf(record.target, doc);
-          if (root) scopes.add(root);
-        }
-      }
-    }
-    for (const scope of scopes) sweep(scope);
-    let count = 0;
-    for (const block of blocks) if (block.isConnected) count += refreshBlock(doc, block);
-    return count;
-  }
-  function restoreAll(doc) {
-    for (const view of doc.querySelectorAll(`.${VIEW2}`)) view.remove();
-    for (const block of doc.querySelectorAll(`[${SOURCE2}]`)) block.removeAttribute(SOURCE2);
-  }
-  function watcher(doc) {
-    const mo = new doc.defaultView.MutationObserver((records) => {
-      mo.disconnect();
-      try {
-        refreshFromMutations(records, doc);
-      } finally {
-        if (observer5 === mo && doc.body) mo.observe(doc.body, OBSERVE);
-      }
-    });
-    mo.observe(doc.body, OBSERVE);
-    return mo;
-  }
-  function ensureObserver() {
-    const doc = app.doc;
-    if (observer5 && observedDoc !== doc) {
-      observer5.disconnect();
-      observer5 = null;
-    }
-    if (transforms.size && !observer5) {
-      observedDoc = doc;
-      if (!doc.getElementById(STYLE_ID9)) {
-        const style = doc.createElement("style");
-        style.id = STYLE_ID9;
-        style.textContent = `[${SOURCE2}]{display:none!important}`;
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      observer5 = watcher(doc);
-    } else if (!transforms.size && observer5) {
-      observer5.disconnect();
-      observer5 = null;
-      doc.getElementById(STYLE_ID9)?.remove();
-    }
-  }
-  function setTransform(name, transform3) {
-    if (transform3) transforms.set(name, transform3);
-    else transforms.delete(name);
-    const doc = app.doc;
-    restoreAll(doc);
-    ensureObserver();
-    return transforms.size ? refreshAll(doc) : 0;
-  }
-
-  // src/plugins/markdown.js
-  var DONE = "data-askx-md";
-  var STYLE_ID10 = "askx-markdown";
-  var HINT = /(^|\n)(#{1,6}\s|\s*[-*+]\s+\S|\s*\d+[.)]\s+\S|```|(?:-{3,}|\*{3,}|_{3,})\s*(\n|$))|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|(^|[\s(])\*[^*\s][^*\n]*\*(?=$|[\s).,!?:;])|(^|[\s(])_[^_\s][^_\n]*_(?=$|[\s).,!?:;])/;
-  function looksLikeMarkdown(text) {
-    return HINT.test(String(text || ""));
-  }
-  var INLINE = [
-    { re: /`([^`\n]+)`/, make: (doc, m) => node(doc, "code", "askx-md-code", [doc.createTextNode(m[1])]) },
-    { re: /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/, make: (doc, m) => link(doc, m[2], m[1]) },
-    { re: /(\*\*|__)([^\n]+?)\1/, make: (doc, m) => node(doc, "strong", "", inline(doc, m[2])) },
-    { re: /~~([^~\n]+)~~/, make: (doc, m) => node(doc, "s", "", inline(doc, m[1])) },
-    { re: /(^|[\s(])\*([^*\s][^*\n]*?)\*(?=$|[\s).,!?:;，。！？：；])/, lead: true, make: (doc, m) => node(doc, "em", "", inline(doc, m[2])) },
-    { re: /(^|[\s(])_([^_\s][^_\n]*?)_(?=$|[\s).,!?:;，。！？：；])/, lead: true, make: (doc, m) => node(doc, "em", "", inline(doc, m[2])) },
-    { re: /https?:\/\/[^\s<>"'）)]+[^\s<>"'）).,!?:;，。！？：；]/, make: (doc, m) => link(doc, m[0], m[0]) }
-  ];
-  function node(doc, tag, cls, children = []) {
-    const el2 = doc.createElement(tag);
-    if (cls) el2.className = cls;
-    for (const child of children) el2.appendChild(child);
-    return el2;
-  }
-  function link(doc, href, text) {
-    const a = node(doc, "a", "askx-md-link", [doc.createTextNode(text)]);
-    a.href = href;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    return a;
-  }
-  function inline(doc, text) {
-    const out = [];
-    let rest = String(text);
-    while (rest) {
-      let best = null;
-      for (const rule of INLINE) {
-        const m = rule.re.exec(rest);
-        if (!m) continue;
-        const start2 = m.index + (rule.lead ? m[1].length : 0);
-        if (!best || start2 < best.start) best = { rule, m, start: start2, end: m.index + m[0].length };
-      }
-      if (!best) {
-        out.push(doc.createTextNode(rest));
-        break;
-      }
-      if (best.start) out.push(doc.createTextNode(rest.slice(0, best.start)));
-      out.push(best.rule.make(doc, best.m));
-      rest = rest.slice(best.end);
-    }
-    return out;
-  }
-  function render(doc, text) {
-    const frag = doc.createDocumentFragment();
-    const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
-    let para = [];
-    const flush = () => {
-      if (!para.length) return;
-      const p = node(doc, "div", "askx-md-p");
-      para.forEach((line, i) => {
-        if (i) p.appendChild(doc.createTextNode("\n"));
-        if (line.startsWith(">")) p.appendChild(doc.createTextNode(line));
-        else for (const n of inline(doc, line)) p.appendChild(n);
-      });
-      frag.appendChild(p);
-      para = [];
-    };
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      const fence = /^\s*```(.*)$/.exec(line);
-      if (fence) {
-        flush();
-        const body = [];
-        for (i += 1; i < lines.length && !/^\s*```\s*$/.test(lines[i]); i += 1) body.push(lines[i]);
-        const pre = node(doc, "pre", "askx-md-pre", [node(doc, "code", "", [doc.createTextNode(body.join("\n"))])]);
-        if (fence[1].trim()) pre.dataset.lang = fence[1].trim();
-        frag.appendChild(pre);
-        continue;
-      }
-      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-      if (heading) {
-        flush();
-        frag.appendChild(node(doc, "div", `askx-md-h askx-md-h${heading[1].length}`, inline(doc, heading[2])));
-        continue;
-      }
-      if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-        flush();
-        frag.appendChild(node(doc, "hr", "askx-md-hr"));
-        continue;
-      }
-      const item = /^\s*([-*+]|\d+[.)])\s+(.*)$/.exec(line);
-      if (item) {
-        flush();
-        const ordered = /\d/.test(item[1]);
-        const list = node(doc, ordered ? "ol" : "ul", "askx-md-list");
-        if (ordered) list.start = parseInt(item[1], 10) || 1;
-        for (; i < lines.length; i += 1) {
-          const m = /^\s*([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
-          if (!m || /\d/.test(m[1]) !== ordered) {
-            i -= 1;
-            break;
-          }
-          list.appendChild(node(doc, "li", "", inline(doc, m[2])));
-        }
-        frag.appendChild(list);
-        continue;
-      }
-      if (!line.trim()) {
-        flush();
-        continue;
-      }
-      para.push(line);
-    }
-    flush();
-    return frag;
-  }
-  var transform = {
-    order: 10,
-    apply(doc, el2, text) {
-      if (!looksLikeMarkdown(text)) return false;
-      el2.textContent = "";
-      el2.appendChild(render(doc, text));
-      el2.setAttribute(DONE, "");
-      return true;
-    }
-  };
-  var CSS2 = `
-[${DONE}] .askx-md-p { white-space: pre-wrap; }
-[${DONE}] .askx-md-p + .askx-md-p, [${DONE}] .askx-md-p + .askx-md-list, [${DONE}] .askx-md-list + .askx-md-p,
-[${DONE}] .askx-md-pre + *, [${DONE}] * + .askx-md-pre, [${DONE}] .askx-md-h + *, [${DONE}] * + .askx-md-h { margin-top: 0.6em; }
-[${DONE}] .askx-md-h { font-weight: 700; line-height: 1.3; }
-[${DONE}] .askx-md-h1 { font-size: 1.35em; } [${DONE}] .askx-md-h2 { font-size: 1.22em; } [${DONE}] .askx-md-h3 { font-size: 1.1em; }
-[${DONE}] .askx-md-list { margin: 0; padding-left: 1.4em; white-space: normal; }
-[${DONE}] .askx-md-list li + li { margin-top: 0.2em; }
-[${DONE}] .askx-md-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; padding: 0.1em 0.35em; border-radius: 4px; background: rgba(127, 127, 127, 0.22); }
-[${DONE}] .askx-md-pre { margin: 0; padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.28); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; line-height: 1.5; }
-[${DONE}] .askx-md-link { color: rgb(29, 155, 240); text-decoration: none; }
-[${DONE}] .askx-md-link:hover { text-decoration: underline; }
-[${DONE}] .askx-md-hr { border: 0; border-top: 1px solid rgba(127, 127, 127, 0.4); margin: 0.6em 0; }
-`;
-  var stopRescan = null;
-  var markdown_default = definePlugin({
-    name: "Markdown",
-    description: "像 grok.com 一样把你发给 Grok 的消息按 Markdown 显示：标题、粗体、斜体、删除线、代码、代码块、列表、链接和分隔线；Grok 回复里漏渲染的 **粗体** 也补上（不改动 X 的消息内容）。",
-    icon: ICONS.markdown,
-    tags: ["messages"],
-    enabledByDefault: true,
-    start() {
-      const doc = app.doc;
-      if (!doc.getElementById(STYLE_ID10)) {
-        const style = doc.createElement("style");
-        style.id = STYLE_ID10;
-        style.textContent = CSS2;
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      setTransform("markdown", transform);
-      stopRescan = watchGrok(doc, (d) => refreshAll(d));
-      startReplyBold(doc);
-    },
-    stop() {
-      stopRescan?.();
-      stopRescan = null;
-      stopReplyBold(app.doc);
-      setTransform("markdown", null);
-      app.doc.getElementById(STYLE_ID10)?.remove();
-    }
-  });
-
-  // src/ui/dom.js
-  function el(doc, tag, attrs = {}, children = []) {
-    const node2 = doc.createElement(tag);
-    for (const [key, value] of Object.entries(attrs)) {
-      if (key === "text") node2.textContent = value;
-      else if (key === "html") node2.innerHTML = value;
-      else if (key.startsWith("on")) node2.addEventListener(key.slice(2), value);
-      else if (value !== false && value != null) node2.setAttribute(key, value === true ? "" : value);
-    }
-    for (const child of children) if (child) node2.appendChild(child);
-    return node2;
   }
 
   // src/ui/controls.js
@@ -3277,7 +1571,7 @@ ${PAD}` : "";
   function badge(doc, text) {
     return el(doc, "span", { class: "askx-badge", text });
   }
-  function oneLine(template) {
+  function oneLine2(template) {
     return String(template || "").replace(/\s+/g, " ").trim();
   }
   function createPresetEditor(doc, settings22, key, layer) {
@@ -3311,7 +1605,7 @@ ${PAD}` : "";
                 preset.private ? badge(doc, "无痕") : null,
                 preset.autoSend ? badge(doc, "自动发送") : null
               ]),
-              el(doc, "span", { class: "askx-prompt-preview", text: oneLine(preset.template) })
+              el(doc, "span", { class: "askx-prompt-preview", text: oneLine2(preset.template) })
             ]),
             el(doc, "span", { class: "askx-prompt-chevron", html: ICONS.chevron })
           ]),
@@ -3392,14 +1686,14 @@ ${PAD}` : "";
   }
 
   // src/ui/pluginDialog.js
-  function label2(doc, title, description) {
+  function label(doc, title, description) {
     return el(doc, "div", { class: "askx-label" }, [
       el(doc, "div", { class: "askx-label-title", text: title }),
       description ? el(doc, "div", { class: "askx-label-desc", text: description }) : null
     ]);
   }
-  var row = (doc, def, control) => el(doc, "div", { class: "askx-row" }, [label2(doc, def.label, def.description), control]);
-  var stacked = (doc, def, control) => el(doc, "div", { class: "askx-stacked" }, [label2(doc, def.label, def.description), control]);
+  var row = (doc, def, control) => el(doc, "div", { class: "askx-row" }, [label(doc, def.label, def.description), control]);
+  var stacked = (doc, def, control) => el(doc, "div", { class: "askx-stacked" }, [label(doc, def.label, def.description), control]);
   function field(doc, settings22, key, def, layer) {
     const value = settings22.get(key);
     switch (def.type) {
@@ -3523,9 +1817,9 @@ ${PAD}` : "";
   var MAX_MAX = 500;
   var DEDUPE_MS = 2e3;
   var HUD = "askx-ih-hud";
-  var STYLE_ID11 = "askx-input-history";
+  var STYLE_ID = "askx-input-history";
   var cleanList = (value) => Array.isArray(value) ? value.filter((x) => typeof x === "string" && x.trim()) : void 0;
-  var settings11 = definePluginSettings({
+  var settings = definePluginSettings({
     maxEntries: {
       type: OptionType.SLIDER,
       label: "最多保存条数",
@@ -3604,7 +1898,16 @@ ${PAD}` : "";
 `, body: rest };
   }
   function entries() {
-    return settings11.store.entries;
+    return settings.store.entries;
+  }
+  function recentPrompts(limit = 8) {
+    const out = [];
+    for (const entry of [...entries()].reverse()) {
+      const prompt = promptOnly(entry, []);
+      if (prompt && !out.includes(prompt)) out.push(prompt);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
   function pushEntry(text, now = Date.now()) {
     const value = normalize(text);
@@ -3614,19 +1917,19 @@ ${PAD}` : "";
     if (recent.size > 20) recent.delete(recent.keys().next().value);
     const list = entries().filter((e) => e !== value);
     list.push(value);
-    const max = Math.min(MAX_MAX, Math.max(MAX_MIN, settings11.store.maxEntries));
-    settings11.store.entries = list.slice(-max);
+    const max = Math.min(MAX_MAX, Math.max(MAX_MIN, settings.store.maxEntries));
+    settings.store.entries = list.slice(-max);
     return true;
   }
   function cleanEntries() {
     const list = entries();
     const clean = [...new Set(list.map((e) => promptOnly(e, [])).filter((e) => e.trim()).reverse())].reverse();
-    if (clean.length !== list.length || clean.some((e, i) => e !== list[i])) settings11.store.entries = clean;
+    if (clean.length !== list.length || clean.some((e, i) => e !== list[i])) settings.store.entries = clean;
   }
   function removeEntry(index2) {
-    settings11.store.entries = entries().filter((_, i) => i !== index2);
+    settings.store.entries = entries().filter((_, i) => i !== index2);
   }
-  function isComposer2(target) {
+  function isComposer(target) {
     if (!target || !rootOf(target, target.ownerDocument)) return false;
     return target.tagName === "TEXTAREA" || target.isContentEditable && target.getAttribute("role") === "textbox";
   }
@@ -3672,7 +1975,7 @@ ${PAD}` : "";
     if (cursor < 0) {
       if (!older) return false;
       draft = readValue(area);
-      head = settings11.store.promptOnly ? splitQuote(draft).head : "";
+      head = settings.store.promptOnly ? splitQuote(draft).head : "";
       cursor = list.length;
     }
     const next = older ? cursor - 1 : cursor + 1;
@@ -3703,7 +2006,7 @@ ${PAD}` : "";
     return range.toString();
   }
   function atStart(area) {
-    const top = settings11.store.promptOnly ? splitQuote(readValue(area)).head : "";
+    const top = settings.store.promptOnly ? splitQuote(readValue(area)).head : "";
     const squash = (s) => s.replace(/[\s\u200B]/g, "");
     if (area.tagName === "TEXTAREA") {
       if (area.selectionStart !== area.selectionEnd) return false;
@@ -3721,17 +2024,17 @@ ${PAD}` : "";
     return text !== null && !text.replace(/[\u200B\n]/g, "");
   }
   function skip(area) {
-    if (!settings11.store.skipPrivate) return false;
+    if (!settings.store.skipPrivate) return false;
     const root = rootOf(area);
     return Boolean(root && isPrivateOn(root));
   }
   function capture(area) {
-    if (!skip(area)) pushEntry(settings11.store.promptOnly ? promptOnly(readValue(area)) : readValue(area));
+    if (!skip(area)) pushEntry(settings.store.promptOnly ? promptOnly(readValue(area)) : readValue(area));
     stopBrowsing();
   }
-  function onKeyDown2(event) {
+  function onKeyDown(event) {
     const area = event.target;
-    if (!isComposer2(area) || event.isComposing || event.keyCode === 229) return;
+    if (!isComposer(area) || event.isComposing || event.keyCode === 229) return;
     if (event.key === "Escape" && cursor >= 0 && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -3746,18 +2049,18 @@ ${PAD}` : "";
     if (event.shiftKey || event.metaKey || event.ctrlKey) return;
     const older = event.key === "ArrowUp";
     const value = readValue(area);
-    const empty = !(settings11.store.promptOnly ? splitQuote(value).body : value).trim();
+    const empty = !(settings.store.promptOnly ? splitQuote(value).body : value).trim();
     const edge = older ? atStart(area) || empty : atEnd(area) && cursor >= 0;
     if (!event.altKey && !edge) return;
     if (!step(area, older)) return;
     event.preventDefault();
     event.stopPropagation();
   }
-  function onInput2(event) {
-    if (writing || cursor < 0 || !isComposer2(event.target)) return;
+  function onInput(event) {
+    if (writing || cursor < 0 || !isComposer(event.target)) return;
     if (readValue(event.target) !== shown) stopBrowsing();
   }
-  function onClick4(event) {
+  function onClick(event) {
     const button = event.target.closest?.('button, [role="button"]');
     if (!button) return;
     const root = rootOf(button, app.doc);
@@ -3799,7 +2102,7 @@ ${PAD}` : "";
         description: "删除所有保存的提问？此操作无法撤销。",
         confirmText: "清空",
         onConfirm: () => {
-          settings11.store.entries = [];
+          settings.store.entries = [];
           render4();
         }
       })
@@ -3867,7 +2170,7 @@ ${PAD}` : "";
       if (!area?.isConnected) return;
       if (cursor < 0) {
         draft = readValue(area);
-        head = settings11.store.promptOnly ? splitQuote(draft).head : "";
+        head = settings.store.promptOnly ? splitQuote(draft).head : "";
       }
       cursor = index2;
       setText(area, head + text, false);
@@ -3893,7 +2196,7 @@ ${PAD}` : "";
     doc.body.appendChild(layer);
     doc.addEventListener("keydown", onKey2, true);
   }
-  var CSS3 = `
+  var CSS = `
 .${HUD} { position: fixed; z-index: 2147483000; min-width: 56px; padding: 2px 10px; border: 1px solid rgba(113, 118, 123, 0.5); border-radius: 9999px;
   background: rgba(0, 0, 0, 0.85); color: #e7e9ea; font: 500 12px/18px TwitterChirp, -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; text-align: center; }
 .${HUD}[data-theme="light"] { background: rgba(255, 255, 255, 0.92); color: #0f1419; }
@@ -3916,7 +2219,1852 @@ ${PAD}` : "";
     icon: ICONS.history,
     tags: ["composer"],
     enabledByDefault: true,
+    settings,
+    start() {
+      const doc = app.doc;
+      if (!doc.getElementById(STYLE_ID)) {
+        const style = doc.createElement("style");
+        style.id = STYLE_ID;
+        style.textContent = CSS;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      if (settings.store.promptOnly) cleanEntries();
+      offInsert = on("askInsert", (quote) => {
+        inserted.push(quote);
+        if (inserted.length > 20) inserted.shift();
+      });
+      doc.addEventListener("keydown", onKeyDown, true);
+      doc.addEventListener("input", onInput, true);
+      doc.addEventListener("click", onClick, true);
+      doc.addEventListener("focusout", onFocusOut, true);
+    },
+    onSettingsChange() {
+      if (settings.store.promptOnly) cleanEntries();
+    },
+    stop() {
+      const doc = app.doc;
+      offInsert?.();
+      offInsert = null;
+      doc.removeEventListener("keydown", onKeyDown, true);
+      doc.removeEventListener("input", onInput, true);
+      doc.removeEventListener("click", onClick, true);
+      doc.removeEventListener("focusout", onFocusOut, true);
+      stopBrowsing();
+      doc.getElementById(STYLE_ID)?.remove();
+    }
+  });
+
+  // src/plugins/askGrok.js
+  var toolbar = null;
+  var unsubscribe = null;
+  var busy = false;
+  function toolbarButtons(context = "post") {
+    const buttons = [];
+    for (const plugin of app.manager.enabledPlugins()) {
+      if (typeof plugin.toolbarButtons !== "function") continue;
+      for (const button of plugin.toolbarButtons(context)) {
+        if ((button.contexts || ["post"]).includes(context)) buttons.push({ ...button, plugin: plugin.name });
+      }
+    }
+    return buttons.sort((a, b) => (a.order ?? 50) - (b.order ?? 50));
+  }
+  function buildRequest(selection, trigger) {
+    const ctx2 = {
+      selection,
+      trigger,
+      template: DEFAULT_TEMPLATE,
+      // A prompt picked with a double or right click; appended to the quote
+      // unless a plugin (PostGrok) puts it in its own template.
+      prompt: trigger?.prompt || "",
+      maxLength: 2e3,
+      plan: { newChat: false, privateMode: "keep", writeMode: "append", autoSend: false }
+    };
+    const hooks = app.manager.enabledPlugins().filter((p) => typeof p.onAsk === "function").sort((a, b) => (a.askOrder ?? 50) - (b.askOrder ?? 50));
+    for (const plugin of hooks) plugin.onAsk(ctx2);
+    if (selection?.context === "grok") {
+      ctx2.plan.newChat = false;
+      ctx2.plan.privateMode = "keep";
+    }
+    return ctx2;
+  }
+  async function ask(selection, trigger = { id: "ask" }) {
+    if (busy) return null;
+    const ctx2 = buildRequest(selection, trigger);
+    const text = cleanSelection(selection?.text, ctx2.maxLength);
+    if (!text) {
+      const result = { ok: false, reason: "empty" };
+      emit("askResult", { result, ctx: ctx2 });
+      return result;
+    }
+    const source = findPostSource(selection.node);
+    const quoted = renderTemplate(ctx2.template, { text, url: source.url, author: source.author });
+    const prompt = ctx2.prompt ? appendPrompt(quoted, ctx2.prompt) : quoted;
+    emit("askInsert", { text, url: source.url, author: source.author });
+    busy = true;
+    try {
+      const result = selection.context === "grok" ? await followUp(selection, prompt, ctx2.plan) : await askGrok(prompt, ctx2.plan, app.doc);
+      if (result.ok && !result.sent) result.composer?.focus();
+      emit("askResult", { result, ctx: ctx2 });
+      return result;
+    } catch (error) {
+      console.error("[Ask X]", error);
+      const result = { ok: false, reason: "error" };
+      emit("askResult", { result, ctx: ctx2 });
+      return result;
+    } finally {
+      busy = false;
+    }
+  }
+  async function followUp(selection, prompt, plan) {
+    const root = rootOf(selection.node, app.doc);
+    const composer = getComposer(root);
+    if (!composer) return { ok: false, reason: "no-composer" };
+    if (!await writePrompt(composer, prompt, plan.writeMode)) return { ok: false, reason: "write-failed" };
+    let sent = false;
+    const notes = [];
+    if (plan.autoSend) {
+      sent = await sendPrompt(root);
+      if (!sent) notes.push("send-failed");
+    }
+    return { ok: true, sent, followUp: true, notes, composer };
+  }
+  var askGrok_default = definePlugin({
+    name: "AskGrok",
+    description: "划词后弹出工具条，点引号把选中文字和推文链接写进 Grok 小窗。其他插件都挂在它上面。",
+    icon: ICONS.quote,
+    required: true,
+    tags: ["composer"],
+    askOrder: 0,
+    // Double click: quote + your last prompt; right click: pick a recent one.
+    toolbarButtons: () => [{ id: "ask", label: "问 Grok", hint: "问 Grok（双击：带上次的提示词；右键：选最近的提示词）", icon: ICONS.quote, className: "askx-main", order: 0, prompts: true }],
+    start() {
+      toolbar = createToolbar({
+        getButtons: toolbarButtons,
+        onAsk: (selection, button, event, prompt) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt }),
+        recentPrompts
+      });
+      unsubscribe = app.manager.subscribe(() => toolbar?.rebuild());
+    },
+    stop() {
+      unsubscribe?.();
+      toolbar?.destroy();
+      toolbar = null;
+    }
+  });
+
+  // src/grokScope.js
+  var PAGE_FLAG = "data-askx-grok-page";
+  var GROK = `:is(${DRAWER}, html[${PAGE_FLAG}] main)`;
+  var users = /* @__PURE__ */ new Set();
+  var observer = null;
+  var schedule = null;
+  var lastPage = null;
+  function sync(doc) {
+    const page = onGrokPage(doc);
+    if (page !== lastPage) {
+      lastPage = page;
+      doc.documentElement.toggleAttribute(PAGE_FLAG, page);
+    }
+    for (const fn of users) {
+      try {
+        fn(doc);
+      } catch (error) {
+        console.error("[Ask X] grok scope update failed", error);
+      }
+    }
+  }
+  function watchGrok(doc, onChange = () => {
+  }) {
+    users.add(onChange);
+    if (!observer) {
+      const view = doc.defaultView;
+      schedule = timeThrottle(view, () => sync(doc), 120);
+      observer = new view.MutationObserver((records) => {
+        if (onGrokPage(doc) !== lastPage || touchesGrok(records, doc)) schedule();
+      });
+      observer.observe(doc.body, { childList: true, subtree: true });
+    }
+    sync(doc);
+    return () => {
+      users.delete(onChange);
+      if (users.size) return;
+      observer?.disconnect();
+      observer = null;
+      schedule?.cancel();
+      schedule = null;
+      lastPage = null;
+      doc.documentElement.removeAttribute(PAGE_FLAG);
+    };
+  }
+  function addStyle(doc, id, css5) {
+    let style = doc.getElementById(id);
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = id;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+    if (style.textContent !== css5) style.textContent = css5;
+    return style;
+  }
+
+  // src/plugins/toasts.js
+  var DURATION_MS = 2600;
+  var FAILURES = {
+    empty: "没有可用的划词。",
+    "no-drawer": "这个页面没有 Grok 小窗（Grok 全页里请直接输入）。",
+    "not-ready": "Grok 小窗没能展开，请稍后再试。",
+    "no-composer": "找不到 Grok 输入框。",
+    "write-failed": "无法写入 Grok 输入框。"
+  };
+  var off = null;
+  var timer = 0;
+  function describe({ result, ctx: ctx2 }) {
+    if (!result.ok) return { kind: "error", text: FAILURES[result.reason] || "发送到 Grok 失败。" };
+    const where = result.private ? "无痕对话" : ctx2.plan.newChat && !result.followUp ? "新对话" : "当前对话";
+    let text = result.sent ? `已在${where}中发送给 Grok。` : `已写入 Grok ${where}。`;
+    if (result.notes?.includes("private-unavailable")) text += "（无痕切换失败）";
+    if (result.notes?.includes("send-failed")) text += "（自动发送失败，请手动发送）";
+    return { kind: result.private ? "private" : "info", text };
+  }
+  function showToast(text, kind2 = "info", doc = app.doc, { duration = DURATION_MS, closable = false, detail = "", onClick: onClick6 = null } = {}) {
+    doc.querySelector(".askx-toast")?.remove();
+    const node2 = doc.createElement("div");
+    node2.className = "askx-toast";
+    node2.dataset.kind = kind2;
+    node2.setAttribute("role", "status");
+    const title = doc.createElement("div");
+    title.className = "askx-toast-text";
+    title.textContent = text;
+    node2.appendChild(title);
+    if (detail) {
+      const line = doc.createElement("div");
+      line.className = "askx-toast-detail";
+      line.textContent = detail;
+      node2.appendChild(line);
+    }
+    if (closable) {
+      const close = doc.createElement("button");
+      close.type = "button";
+      close.className = "askx-toast-close";
+      close.setAttribute("aria-label", "关闭");
+      close.textContent = "×";
+      close.addEventListener("click", (event) => {
+        event.stopPropagation();
+        node2.remove();
+      });
+      node2.appendChild(close);
+      node2.dataset.closable = "true";
+    }
+    if (onClick6) {
+      node2.style.cursor = "pointer";
+      node2.addEventListener("click", () => {
+        node2.remove();
+        onClick6();
+      });
+    }
+    doc.body.appendChild(node2);
+    clearTimeout(timer);
+    if (duration > 0) timer = setTimeout(() => node2.remove(), duration);
+    return node2;
+  }
+  var toasts_default = definePlugin({
+    name: "Toasts",
+    description: "在页面底部提示结果：写入了哪种对话、无痕是否生效、出了什么错。",
+    icon: ICONS.bell,
+    tags: ["notifications"],
+    enabledByDefault: true,
+    start() {
+      off = on("askResult", (event) => {
+        const { kind: kind2, text } = describe(event);
+        showToast(text, kind2);
+      });
+    },
+    stop() {
+      off?.();
+      app.doc.querySelector(".askx-toast")?.remove();
+    }
+  });
+
+  // src/plugins/autoRetry.js
+  var settings2 = definePluginSettings({
+    delay: {
+      type: OptionType.SLIDER,
+      label: "等待秒数",
+      description: "出错后等几秒再自动重试。",
+      min: 1,
+      max: 10,
+      default: 2
+    }
+  });
+  var RETRY_LABELS = ["Retry", "Try again", "重试", "再试一次", "重新尝试", "重新整理"];
+  var COOLDOWN_MS = 6e4;
+  var tried = /* @__PURE__ */ new WeakSet();
+  var lastAuto = -Infinity;
+  var pending = 0;
+  var label2 = (el2) => (el2.getAttribute("aria-label") || el2.textContent || "").trim().toLowerCase();
+  function findRetry(root) {
+    const list = messageList(root);
+    const last2 = list?.lastElementChild;
+    if (!last2) return null;
+    const wanted = RETRY_LABELS.map((l) => l.toLowerCase());
+    for (let row2 = last2; row2; row2 = row2.previousElementSibling) {
+      if (!row2.textContent.trim()) continue;
+      return [...row2.querySelectorAll('button, [role="button"]')].find((b) => wanted.includes(label2(b)) && !b.disabled) || null;
+    }
+    return null;
+  }
+  function check(doc = app.doc, now = Date.now()) {
+    for (const root of grokRoots(doc)) {
+      const button = findRetry(root);
+      if (!button || tried.has(button)) continue;
+      tried.add(button);
+      if (now - lastAuto < COOLDOWN_MS) return "cooldown";
+      lastAuto = now;
+      const view = doc.defaultView;
+      view.clearTimeout(pending);
+      pending = view.setTimeout(() => {
+        if (!button.isConnected) return;
+        button.click();
+        showToast("Grok 回复出错，已自动重试一次。", "info", doc);
+      }, Math.max(1, settings2.store.delay) * 1e3);
+      return "scheduled";
+    }
+    return null;
+  }
+  var stop = null;
+  var autoRetry_default = definePlugin({
+    name: "AutoRetry",
+    description: "Grok 回复出错（Something went wrong）时，自动点一次 X 自带的 Retry。每次出错只重试一次，一分钟内最多一次（移植自 void++）。",
+    icon: ICONS.retry,
+    tags: ["chats"],
+    enabledByDefault: true,
+    settings: settings2,
+    start() {
+      stop = watchGrok(app.doc, (doc) => check(doc));
+    },
+    stop() {
+      stop?.();
+      stop = null;
+      app.doc.defaultView.clearTimeout(pending);
+    }
+  });
+
+  // src/plugins/betterLinks.js
+  var HIGHLIGHT = "askx-bare-link";
+  var VISITED = "askx-bare-link-visited";
+  var MAX_VISITED = 500;
+  var settings3 = definePluginSettings({
+    visitedColor: {
+      type: OptionType.BOOLEAN,
+      label: "已访问链接变色",
+      description: "点过的域名链接改用紫色显示（移植自 void++）。",
+      default: true
+    }
+  });
+  function visitedList() {
+    const list = app.manager?.pluginData?.("BetterLinks")?.visited;
+    return Array.isArray(list) ? list : [];
+  }
+  function markVisited(href) {
+    const list = visitedList().filter((h) => h !== href);
+    list.push(href);
+    app.manager?.mergePluginData?.("BetterLinks", { visited: list.slice(-MAX_VISITED) });
+  }
+  var STYLE_ID2 = "askx-better-links";
+  var TLDS = "com|org|net|io|ai|dev|app|co|me|gg|tv|xyz|info|edu|gov|so|sh|tech|site|wiki|page|link|cn|jp|kr|uk|de|fr|ru|us|ca|au|in|eu|hk|tw|sg";
+  var DOMAIN = new RegExp(`(?<![@\\w.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:${TLDS})(?![\\w-])(?:/[^\\s，。、；：！？）)」』"'<>]*)?`, "gi");
+  var SKIP2 = 'a, code, pre, textarea, [contenteditable="true"], button, .askx-um';
+  function findDomains(text) {
+    const out = [];
+    for (const m of text.matchAll(DOMAIN)) {
+      const value = m[0].replace(/[.,:;!?]+$/u, "");
+      out.push({ index: m.index, text: value });
+    }
+    return out;
+  }
+  function hrefFor(text) {
+    return /^https?:\/\//i.test(text) ? text : `https://${text}`;
+  }
+  function textNodes(root) {
+    const doc = root.ownerDocument;
+    const walker = doc.createTreeWalker(root, 4, {
+      acceptNode: (n) => n.nodeValue && n.nodeValue.includes(".") && !n.parentElement?.closest(SKIP2) ? 1 : 3
+    });
+    const out = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n);
+    return out;
+  }
+  function collect(doc = app.doc) {
+    const found = [];
+    for (const root of grokRoots(doc)) {
+      const list = messageList(root);
+      if (!list) continue;
+      for (const node2 of textNodes(list)) {
+        for (const { index: index2, text } of findDomains(node2.nodeValue)) {
+          const range = doc.createRange();
+          range.setStart(node2, index2);
+          range.setEnd(node2, index2 + text.length);
+          found.push({ range, href: hrefFor(text) });
+        }
+      }
+    }
+    return found;
+  }
+  var links = [];
+  function paint(doc) {
+    links = collect(doc);
+    const view = doc.defaultView;
+    if (!view.CSS?.highlights || typeof view.Highlight !== "function") return;
+    const visited = settings3.store.visitedColor ? new Set(visitedList()) : /* @__PURE__ */ new Set();
+    const fresh = links.filter((l) => !visited.has(l.href)).map((l) => l.range);
+    const seen2 = links.filter((l) => visited.has(l.href)).map((l) => l.range);
+    if (fresh.length) view.CSS.highlights.set(HIGHLIGHT, new view.Highlight(...fresh));
+    else view.CSS.highlights.delete(HIGHLIGHT);
+    if (seen2.length) view.CSS.highlights.set(VISITED, new view.Highlight(...seen2));
+    else view.CSS.highlights.delete(VISITED);
+  }
+  function linkAt(doc, x, y) {
+    const pos = doc.caretPositionFromPoint?.(x, y);
+    const node2 = pos ? pos.offsetNode : doc.caretRangeFromPoint?.(x, y)?.startContainer;
+    const offset = pos ? pos.offset : doc.caretRangeFromPoint?.(x, y)?.startOffset;
+    if (!node2 || node2.nodeType !== 3) return null;
+    return links.find(({ range }) => range.startContainer === node2 && offset >= range.startOffset && offset <= range.endOffset && (() => {
+      const r = range.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    })()) || null;
+  }
+  var inGrok = (target) => Boolean(target?.closest?.('[data-testid="GrokDrawer"], html[data-askx-grok-page] main'));
+  function onClick2(event) {
+    if (event.button !== 0 || !links.length || !inGrok(event.target)) return;
+    const doc = event.target.ownerDocument;
+    if (doc.defaultView.getSelection?.()?.toString()) return;
+    const hit = linkAt(doc, event.clientX, event.clientY);
+    if (!hit) return;
+    event.preventDefault();
+    event.stopPropagation();
+    doc.defaultView.open(hit.href, "_blank", "noopener");
+    markVisited(hit.href);
+    paint(doc);
+  }
+  var lastCursor = null;
+  function onMove(event) {
+    const host = links.length ? event.target.closest?.('[data-testid="GrokDrawer"], html[data-askx-grok-page] main') : null;
+    const over = Boolean(host && linkAt(event.target.ownerDocument, event.clientX, event.clientY));
+    if (over && host) {
+      host.style.cursor = "pointer";
+      lastCursor = host;
+    } else if (lastCursor) {
+      lastCursor.style.removeProperty("cursor");
+      lastCursor = null;
+    }
+  }
+  var stop2 = null;
+  var betterLinks_default = definePlugin({
+    name: "BetterLinks",
+    description: "Grok 回复里只写了域名的地方（如 pearltrees.com）变成可点击的链接，在新标签页打开。不改动 X 的消息内容（移植自 void++）。",
+    icon: ICONS.link,
+    tags: ["messages"],
+    enabledByDefault: true,
+    settings: settings3,
+    onSettingsChange: () => paint(app.doc),
+    start() {
+      const doc = app.doc;
+      addStyle(doc, STYLE_ID2, `::highlight(${HIGHLIGHT}){color:rgb(29,155,240);text-decoration:underline;text-underline-offset:2px}::highlight(${VISITED}){color:rgb(149,117,205);text-decoration:underline;text-underline-offset:2px}`);
+      stop2 = watchGrok(doc, paint);
+      doc.addEventListener("click", onClick2, true);
+      doc.addEventListener("mousemove", onMove, { passive: true });
+    },
+    stop() {
+      const doc = app.doc;
+      stop2?.();
+      stop2 = null;
+      doc.removeEventListener("click", onClick2, true);
+      doc.removeEventListener("mousemove", onMove);
+      doc.defaultView.CSS?.highlights?.delete(HIGHLIGHT);
+      doc.defaultView.CSS?.highlights?.delete(VISITED);
+      doc.getElementById(STYLE_ID2)?.remove();
+      lastCursor?.style.removeProperty("cursor");
+      lastCursor = null;
+      links = [];
+    }
+  });
+
+  // src/streamWatch.js
+  var EVENT = "askx:grok-stream";
+  var REPLY_URL = /\/2\/grok\/add_response\.json|\/rest\/app-chat\/conversations\/(?:new|[^/?#]+\/responses)(?:[?#]|$)/;
+  var STALE_MS = 5 * 6e4;
+  var isReplyUrl = (url) => REPLY_URL.test(String(url || ""));
+  var listeners = /* @__PURE__ */ new Set();
+  var live = /* @__PURE__ */ new Map();
+  var seq = 0;
+  var installedOn = null;
+  var perf = null;
+  function emit2(detail) {
+    for (const fn of listeners) {
+      try {
+        fn(detail);
+      } catch (error) {
+        console.error("[Ask X] stream listener failed", error);
+      }
+    }
+  }
+  function start() {
+    const now = Date.now();
+    for (const [id2, at] of live) if (now - at > STALE_MS) live.delete(id2);
+    const id = ++seq;
+    live.set(id, now);
+    emit2({ id, phase: "start" });
+  }
+  function handleEntry(entry) {
+    if (!isReplyUrl(entry?.name)) return false;
+    if (!live.size) return false;
+    const status = entry.responseStatus || 0;
+    const id = live.keys().next().value;
+    live.delete(id);
+    emit2({ id, phase: "end", ok: !status || status < 400 });
+    return true;
+  }
+  function isComposer2(el2) {
+    return Boolean(el2 && (el2.tagName === "TEXTAREA" || el2.isContentEditable && el2.getAttribute?.("role") === "textbox") && rootOf(el2, el2.ownerDocument));
+  }
+  function hasText(el2) {
+    const text = el2.tagName === "TEXTAREA" ? el2.value : el2.textContent;
+    return /\S/.test(String(text || "").replace(/​/g, ""));
+  }
+  function onKeyDown2(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.isComposing || event.keyCode === 229) return;
+    const el2 = event.target;
+    if (isComposer2(el2) && hasText(el2)) start();
+  }
+  function onClick3(event) {
+    const button = event.target.closest?.('button, [role="button"]');
+    const root = button && rootOf(button, button.ownerDocument);
+    if (!root || button !== findButton(root, xLabels().send)) return;
+    const field3 = root.querySelector('textarea, [contenteditable="true"][role="textbox"]');
+    if (field3 && hasText(field3)) start();
+  }
+  function onEvent(event) {
+    let detail;
+    try {
+      detail = JSON.parse(event.detail);
+    } catch {
+      return;
+    }
+    if (detail?.phase === "start") start();
+    else if (detail?.phase === "end") {
+      if (!live.size) return;
+      const id = live.keys().next().value;
+      live.delete(id);
+      emit2({ id, phase: "end", ok: detail.ok !== false });
+    }
+  }
+  function install(doc) {
+    const view = doc.defaultView;
+    doc.addEventListener("keydown", onKeyDown2, { capture: true, passive: true });
+    doc.addEventListener("click", onClick3, { capture: true, passive: true });
+    doc.addEventListener(EVENT, onEvent);
+    if (typeof view?.PerformanceObserver === "function") {
+      try {
+        perf = new view.PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) handleEntry(entry);
+        });
+        perf.observe({ type: "resource" });
+      } catch (error) {
+        console.warn("[Ask X] resource timing unavailable", error);
+      }
+    }
+  }
+  function cancelAll() {
+    if (!live.size) return false;
+    const ids2 = [...live.keys()];
+    live.clear();
+    for (const id of ids2) emit2({ id, phase: "end", ok: true, cancelled: true });
+    return true;
+  }
+  function isStreaming() {
+    return live.size > 0;
+  }
+  function watchStreams(doc, fn) {
+    if (installedOn !== doc) {
+      installedOn = doc;
+      install(doc);
+    }
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
+
+  // src/plugins/grokState.js
+  var ICON_ID = "askx-chat-state-favicon";
+  var STYLE_ID3 = "askx-grok-state";
+  var STATE = "data-askx-grok-state";
+  var STYLE = "data-askx-grok-style";
+  var settings4 = definePluginSettings({
+    buttonStyle: {
+      type: OptionType.SELECT,
+      label: "Grok 按钮样式",
+      description: "小窗收起后 Grok 按钮怎样显示状态（回复中蓝、完成绿、待发送黄、出错红），样式和 Void++ 一致，只用其中一种。选“不显示”时由 StatusBadge 的角标圆点接管。",
+      options: [
+        { value: "hole", label: "Grok 标志变色" },
+        { value: "bg", label: "背景变色" },
+        { value: "dot", label: "彩色圆点" },
+        { value: "badge", label: "徽标 + 符号" },
+        { value: "original", label: "只用表情" },
+        { value: "none", label: "不显示" }
+      ],
+      default: "hole"
+    },
+    favicon: {
+      type: OptionType.BOOLEAN,
+      label: "标签页图标显示状态",
+      description: "在 X 自己的图标右下角加一个彩色状态点。空闲时恢复 X 原图标。",
+      default: false
+    },
+    faviconStyle: {
+      type: OptionType.SELECT,
+      label: "标签页图标样式",
+      description: "状态点的样式。",
+      options: [
+        { value: "dot", label: "彩色圆点" },
+        { value: "badge", label: "徽标 + 符号" }
+      ],
+      default: "dot"
+    }
+  });
+  function tintsButton() {
+    return Boolean(app.manager?.isEnabled?.("GrokState") && settings4.store.buttonStyle !== "none");
+  }
+  var KIND_COLOR = { rotate: "#3B82F6", done: "#22C55E", ready: "#F59E0B", error: "#EF4444" };
+  var X_MARK = "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z";
+  var xTile = () => `<rect width="64" height="64" rx="12" fill="#000"/><g transform="translate(12 12) scale(1.6667)" fill="#fff"><path d="${X_MARK}"/></g>`;
+  var svgData = (inner) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">${inner}</svg>`)}`;
+  function glyph(kind2) {
+    if (kind2 === "rotate") return '<g transform="translate(50 50)"><g><path d="M0-6.1 A6.1 6.1 0 1 1 -5.3 3.05" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="0.85s" repeatCount="indefinite"/></g></g>';
+    if (kind2 === "done") return '<path d="M45 50.2 L48.6 53.8 L55.2 46" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>';
+    if (kind2 === "ready") return '<path d="M50 55V45M45.2 49.8 50 45l4.8 4.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
+    return '<path d="M45.8 45.8 54.2 54.2M54.2 45.8 45.8 54.2" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>';
+  }
+  function iconFor(style, kind2) {
+    const color = KIND_COLOR[kind2];
+    if (!color) return "";
+    if (style === "badge") return svgData(`${xTile()}<circle cx="50" cy="50" r="13" fill="#000"/><circle cx="50" cy="50" r="10.5" fill="${color}"/>${glyph(kind2)}`);
+    return svgData(`${xTile()}<circle cx="51" cy="51" r="11.5" fill="#000"/><circle cx="51" cy="51" r="8.5" fill="${color}"/>`);
+  }
+  var kind = "wait";
+  var streaming = false;
+  var finished = null;
+  function composerText(doc) {
+    for (const root of grokRoots(doc)) {
+      const field3 = getComposer(root);
+      if (field3 && /\S/.test(readValue(field3).replace(/​/g, ""))) return true;
+    }
+    return false;
+  }
+  function hasConversation(doc) {
+    return grokRoots(doc).some((root) => getMessages(root).length > 0);
+  }
+  function nextKind({ streaming: live2, finished: last2, typed, conversation }) {
+    if (live2) return "rotate";
+    if (typed) return "ready";
+    if (last2 && conversation !== false) return last2;
+    return "wait";
+  }
+  function apply(doc = app.doc) {
+    const typed = composerText(doc);
+    if (finished && !streaming && typed) finished = null;
+    const conversation = grokRoots(doc).length ? hasConversation(doc) : null;
+    if (finished && conversation === false) finished = null;
+    const next = nextKind({ streaming, finished, typed, conversation });
+    if (next !== kind) kind = next;
+    paint2(doc);
+  }
+  function paintButton(doc) {
+    const style = settings4.store.buttonStyle;
+    const value = style !== "none" && KIND_COLOR[kind] ? kind : "";
+    for (const drawer of doc.querySelectorAll(DRAWER)) {
+      if (value && !getComposer(drawer)) {
+        if (drawer.getAttribute(STATE) !== value) drawer.setAttribute(STATE, value);
+        if (drawer.getAttribute(STYLE) !== style) drawer.setAttribute(STYLE, style);
+      } else {
+        drawer.removeAttribute(STATE);
+        drawer.removeAttribute(STYLE);
+      }
+    }
+  }
+  function paintFavicon(doc) {
+    const href = settings4.store.favicon ? iconFor(settings4.store.faviconStyle, kind) : "";
+    let link2 = doc.getElementById(ICON_ID);
+    if (!href) {
+      link2?.remove();
+      return;
+    }
+    const head2 = doc.head;
+    if (!head2) return;
+    if (!link2) {
+      link2 = doc.createElement("link");
+      link2.id = ICON_ID;
+      link2.rel = "icon";
+      link2.type = "image/svg+xml";
+      link2.setAttribute("sizes", "any");
+    }
+    if (link2.getAttribute("href") !== href) link2.setAttribute("href", href);
+    if (head2.lastElementChild !== link2) head2.appendChild(link2);
+  }
+  function paint2(doc) {
+    paintButton(doc);
+    paintFavicon(doc);
+  }
+  function onStream(detail, doc = app.doc) {
+    if (detail.phase === "start") {
+      streaming = true;
+      finished = null;
+    } else {
+      streaming = false;
+      finished = detail.cancelled ? null : detail.ok === false ? "error" : "done";
+    }
+    apply(doc);
+  }
+  var offStreams = null;
+  var offGrok = null;
+  var headObserver = null;
+  var onInput2 = (event) => {
+    if (event.target?.closest?.('[data-testid="GrokDrawer"], main')) apply();
+  };
+  var EMOJI = { rotate: "🔄", done: "✔️", ready: "👍", error: "🚫" };
+  var MARK = ':is([data-testid="GrokDrawerHeader"] > button:only-child > svg, button[data-testid="GrokDrawerHeader"] > svg)';
+  var sel = (style, k, tail = "") => `${DRAWER}[${STYLE}="${style}"][${STATE}="${k}"]${tail}`;
+  var glyphUrl = (k, c) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="37 37 26 26"><circle cx="50" cy="50" r="12.5" fill="#000"/><circle cx="50" cy="50" r="10.5" fill="${c}"/>${glyph(k)}</svg>`)}")`;
+  var BUTTON_CSS = Object.entries(KIND_COLOR).map(([k, c]) => [
+    `${sel("hole", k)} ${MARK}{color:${c}!important;fill:${c}!important;transition:color .2s,fill .2s}`,
+    `${sel("bg", k)} > div:first-child{background-color:${c}!important}`,
+    `${sel("bg", k)} ${MARK}{color:#fff!important;fill:#fff!important}`,
+    `${sel("dot", k, "::after")},${sel("badge", k, "::after")},${sel("original", k, "::after")}{content:"";position:absolute;z-index:2;pointer-events:none}`,
+    `${sel("dot", k, "::after")}{top:6px;right:6px;width:10px;height:10px;border-radius:50%;background:${c};box-shadow:0 0 0 2px #000}`,
+    `${sel("badge", k, "::after")}{top:3px;right:3px;width:18px;height:18px;background:${glyphUrl(k, c)} center/contain no-repeat}`,
+    `${sel("original", k)} ${MARK}{opacity:0!important}`,
+    `${sel("original", k, "::after")}{content:"${EMOJI[k]}";inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1}`
+  ].join("")).join("") + `${DRAWER}[${STYLE}="hole"][${STATE}="rotate"] ${MARK},${DRAWER}[${STYLE}="bg"][${STATE}="rotate"] > div:first-child,${DRAWER}[${STYLE}="dot"][${STATE}="rotate"]::after{animation:askx-grok-pulse 1.2s ease-in-out infinite}@keyframes askx-grok-pulse{0%,100%{opacity:1}50%{opacity:.45}}@media (prefers-reduced-motion: reduce){${DRAWER}[${STATE}] *,${DRAWER}[${STATE}]::after{animation:none!important}}`;
+  var CSS2 = BUTTON_CSS;
+  var grokState_default = definePlugin({
+    name: "GrokState",
+    description: "Grok 的状态显示在 Grok 按钮上（小窗收起时）：回复中蓝、完成绿、待发送黄、出错红，样式和 Void++ 一致可选（默认 Grok 标志变色）。可选在 X 标签页图标上加状态点（默认关闭，不替换 X 图标）。",
+    icon: ICONS.tabIcon,
+    tags: ["notifications"],
+    enabledByDefault: true,
+    settings: settings4,
+    start() {
+      const doc = app.doc;
+      kind = "wait";
+      streaming = false;
+      finished = null;
+      addStyle(doc, STYLE_ID3, CSS2);
+      offStreams = watchStreams(doc, (detail) => onStream(detail, doc));
+      offGrok = watchGrok(doc, () => apply(doc));
+      doc.addEventListener("input", onInput2, true);
+      headObserver = new doc.defaultView.MutationObserver(() => {
+        if (doc.getElementById(ICON_ID)) paintFavicon(doc);
+      });
+      if (doc.head) headObserver.observe(doc.head, { childList: true });
+      apply(doc);
+    },
+    onSettingsChange: () => paint2(app.doc),
+    stop() {
+      const doc = app.doc;
+      offStreams?.();
+      offGrok?.();
+      offStreams = null;
+      offGrok = null;
+      headObserver?.disconnect();
+      headObserver = null;
+      doc.removeEventListener("input", onInput2, true);
+      doc.getElementById(ICON_ID)?.remove();
+      doc.getElementById(STYLE_ID3)?.remove();
+      for (const el2 of doc.querySelectorAll(`[${STATE}]`)) {
+        el2.removeAttribute(STATE);
+        el2.removeAttribute(STYLE);
+      }
+      kind = "wait";
+    }
+  });
+
+  // src/plugins/completeToast.js
+  var settings5 = definePluginSettings({
+    keep: {
+      type: OptionType.BOOLEAN,
+      label: "一直显示",
+      description: "“回复完成”提示不自动消失，点 × 或打开 Grok 小窗才关闭。",
+      default: true
+    },
+    seconds: {
+      type: OptionType.SLIDER,
+      label: "显示秒数",
+      description: "关闭“一直显示”时，提示停留的秒数。",
+      min: 2,
+      max: 30,
+      default: 8
+    },
+    preview: {
+      type: OptionType.BOOLEAN,
+      label: "回复预览",
+      description: "在提示里显示回复开头的一小段（小窗展开着才能读到）。",
+      default: true
+    }
+  });
+  var PREVIEW_CHARS = 80;
+  var THINKING = /^(thoughts?|thinking…?|thought for .*|思考中?…?|已思考.*|想了.*)$/i;
+  function replyPreview(doc = app.doc, max = PREVIEW_CHARS) {
+    for (const root of grokRoots(doc)) {
+      const last2 = getMessages(root).filter((m) => m.role === "assistant").pop();
+      if (!last2) continue;
+      const text = (last2.el.innerText || last2.el.textContent || "").split("\n").map((l) => l.trim()).filter((l) => l && !THINKING.test(l)).join(" ").replace(/\s+/g, " ").trim();
+      if (text) return text.length > max ? `${text.slice(0, max)}…` : text;
+    }
+    return "";
+  }
+  function toastOptions(doc = app.doc) {
+    if (!app.manager?.isEnabled?.("CompleteToast")) return null;
+    const { keep, seconds, preview } = settings5.store;
+    return {
+      duration: keep ? 0 : Math.max(2, seconds) * 1e3,
+      closable: true,
+      detail: preview ? replyPreview(doc) : "",
+      // Shown even with the tab in the background, so it is there on return.
+      whileHidden: keep
+    };
+  }
+  var stopWatch = null;
+  var wasOpen = false;
+  var completeToast_default = definePlugin({
+    name: "CompleteToast",
+    description: "Grok“回复完成”的页面提示一直显示，直到点 × 或打开小窗；还能显示回复开头的一小段（移植自 void++）。",
+    icon: ICONS.bellRing,
+    tags: ["notifications"],
+    enabledByDefault: true,
+    settings: settings5,
+    start() {
+      wasOpen = isDrawerOpen(app.doc);
+      stopWatch = watchGrok(app.doc, (doc) => {
+        const open2 = isDrawerOpen(doc);
+        if (open2 && !wasOpen) doc.querySelector(".askx-toast[data-reply-done]")?.remove();
+        wasOpen = open2;
+      });
+    },
+    stop() {
+      stopWatch?.();
+      stopWatch = null;
+    }
+  });
+
+  // src/plugins/composerOpacity.js
+  var MARK2 = "data-askx-composer";
+  var STYLE_ID4 = "askx-composer-opacity";
+  var settings6 = definePluginSettings({
+    opacity: {
+      type: OptionType.SLIDER,
+      label: "不透明度",
+      description: "输入框背景的不透明度，100 为完全不透明。",
+      min: 0,
+      max: 100,
+      default: 100
+    },
+    blur: {
+      type: OptionType.SLIDER,
+      label: "背景模糊（px）",
+      description: "不透明度低于 100 时，模糊输入框后面的内容。",
+      min: 0,
+      max: 40,
+      default: 16
+    }
+  });
+  var isClear = (bg) => !bg || bg === "transparent" || /rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg);
+  function findComposerBox(root) {
+    const field3 = getComposer(root);
+    if (!field3) return null;
+    const view = root.ownerDocument.defaultView;
+    for (let node2 = field3.parentElement; node2 && node2 !== root; node2 = node2.parentElement) {
+      const style = view.getComputedStyle(node2);
+      if (!isClear(style.backgroundColor) && parseFloat(style.borderTopLeftRadius || style.borderRadius) > 0) return node2;
+    }
+    return null;
+  }
+  function rgbOf(color) {
+    const m = String(color).match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/);
+    return m ? `${Math.round(m[1])}, ${Math.round(m[2])}, ${Math.round(m[3])}` : null;
+  }
+  var observer2 = null;
+  var schedule2 = null;
+  function apply2(doc = app.doc) {
+    const { opacity, blur } = settings6.store;
+    let count = 0;
+    for (const root of grokRoots(doc)) {
+      const box = findComposerBox(root);
+      if (!box) continue;
+      if (!box.hasAttribute(MARK2)) {
+        const rgb = rgbOf(doc.defaultView.getComputedStyle(box).backgroundColor);
+        if (!rgb) continue;
+        box.style.setProperty("--askx-composer-rgb", rgb);
+        box.setAttribute(MARK2, "");
+      }
+      count += 1;
+    }
+    const style = doc.getElementById(STYLE_ID4);
+    if (style) {
+      const alpha = Math.min(100, Math.max(0, opacity)) / 100;
+      const frost = alpha < 1 && blur > 0 ? `-webkit-backdrop-filter:blur(${blur}px)!important;backdrop-filter:blur(${blur}px)!important;` : "";
+      const text = alpha >= 1 ? "" : `[${MARK2}]{background-color:rgba(var(--askx-composer-rgb),${alpha})!important;${frost}}`;
+      if (style.textContent !== text) style.textContent = text;
+    }
+    return count;
+  }
+  var composerOpacity_default = definePlugin({
+    name: "ComposerOpacity",
+    description: "调整 Grok 输入框背景的不透明度和模糊程度（移植自 void++）。",
+    icon: ICONS.blend,
+    tags: ["composer", "appearance"],
+    enabledByDefault: true,
+    settings: settings6,
+    start() {
+      const doc = app.doc;
+      if (!doc.getElementById(STYLE_ID4)) {
+        const style = doc.createElement("style");
+        style.id = STYLE_ID4;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      schedule2 = timeThrottle(doc.defaultView, () => apply2(doc), 200);
+      apply2(doc);
+      observer2 = new doc.defaultView.MutationObserver((records) => {
+        if (touchesGrok(records, doc)) schedule2();
+      });
+      observer2.observe(doc.body, { childList: true, subtree: true });
+    },
+    onSettingsChange: () => apply2(),
+    stop() {
+      observer2?.disconnect();
+      observer2 = null;
+      schedule2?.cancel();
+      for (const box of app.doc.querySelectorAll(`[${MARK2}]`)) {
+        box.removeAttribute(MARK2);
+        box.style.removeProperty("--askx-composer-rgb");
+      }
+      app.doc.getElementById(STYLE_ID4)?.remove();
+    }
+  });
+
+  // src/plugins/customGreeting.js
+  var MARK3 = "data-askx-greet";
+  var PH_MARK = "data-askx-greet-ph";
+  var STYLE_ID5 = "askx-greeting";
+  var MIN_FONT = 20;
+  var DEFAULT_PHRASES = [
+    "今天想弄明白点什么？",
+    "划一段文字，问问 Grok。",
+    "好问题，值得一个好答案。"
+  ].join("\n");
+  var settings7 = definePluginSettings({
+    phrases: {
+      type: OptionType.STRING,
+      multiline: true,
+      allowEmpty: true,
+      label: "问候语",
+      description: "每行一句。留空则保留 Grok 自己的问候语。",
+      default: DEFAULT_PHRASES
+    },
+    mode: {
+      type: OptionType.SELECT,
+      label: "切换时机",
+      description: "什么时候换下一句。",
+      options: [
+        { value: "refresh", label: "每次新对话" },
+        { value: "interval", label: "定时切换" },
+        { value: "manual", label: "点击问候语" }
+      ],
+      default: "refresh"
+    },
+    order: {
+      type: OptionType.SELECT,
+      label: "顺序",
+      description: "按列表顺序还是随机挑一句。",
+      options: [
+        { value: "sequential", label: "顺序" },
+        { value: "random", label: "随机" }
+      ],
+      default: "sequential"
+    },
+    intervalSec: {
+      type: OptionType.SLIDER,
+      label: "切换间隔（秒）",
+      description: "“定时切换”时每隔多少秒换一句。",
+      min: 1,
+      max: 3600,
+      default: 10
+    },
+    placeholder: {
+      type: OptionType.BOOLEAN,
+      label: "替换输入框提示",
+      description: "同时把输入框里的灰色提示（Ask anything）换成当前这句问候语。",
+      default: false
+    }
+  });
+  function parsePhrases(raw) {
+    return String(raw ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+  }
+  var observer3 = null;
+  var timer2 = 0;
+  var index = -1;
+  var schedule3 = null;
+  var shownOnce = false;
+  var seen = /* @__PURE__ */ new WeakSet();
+  function phrases() {
+    return parsePhrases(settings7.store.phrases);
+  }
+  function nextIndex(current2, count, order, random = Math.random) {
+    if (count <= 1) return 0;
+    if (order === "random") {
+      let next = current2;
+      while (next === current2) next = Math.floor(random() * count);
+      return next;
+    }
+    return (current2 + 1) % count;
+  }
+  function current() {
+    const list = phrases();
+    if (!list.length) return "";
+    if (index < 0 || index >= list.length) index = 0;
+    return list[index];
+  }
+  function rotate() {
+    const list = phrases();
+    index = nextIndex(index, list.length, settings7.store.order);
+    paint3();
+  }
+  function findGreeting(root) {
+    if (getMessages(root).length) return null;
+    const view = root.ownerDocument.defaultView;
+    const composer = getComposer(root);
+    const painted = root.querySelector(`[${MARK3}]`);
+    if (painted && !(composer && (painted.contains(composer) || composer.contains(painted))) && parseFloat(painted.style.getPropertyValue("--askx-greet-size")) >= MIN_FONT) return painted;
+    for (const el2 of root.querySelectorAll("span, h1, h2, div[dir]")) {
+      if (el2.childElementCount || !el2.textContent.trim()) continue;
+      if (composer && (el2.contains(composer) || composer.contains(el2))) continue;
+      if (el2.closest('button, [role="button"], a')) continue;
+      if (parseFloat(view.getComputedStyle(el2).fontSize) < MIN_FONT) continue;
+      const heading = el2.closest("h1, h2, h3");
+      return heading && root.contains(heading) ? heading : el2;
+    }
+    return null;
+  }
+  function css() {
+    return `[${MARK3}]{font-size:0!important;white-space:normal!important}[${MARK3}]>*{display:none!important}[${MARK3}]::after{content:attr(${MARK3});display:inline-block;max-width:100%;font-size:var(--askx-greet-size,26px);line-height:1.3;white-space:normal;overflow-wrap:anywhere;text-wrap:balance}[${MARK3}][data-askx-greet-click]{cursor:pointer}`;
+  }
+  function clearMarks(doc) {
+    for (const el2 of doc.querySelectorAll(`[${MARK3}]`)) {
+      el2.removeAttribute(MARK3);
+      el2.removeAttribute("data-askx-greet-click");
+      el2.style.removeProperty("--askx-greet-size");
+    }
+    for (const el2 of doc.querySelectorAll(`[${PH_MARK}]`)) {
+      el2.setAttribute("placeholder", el2.getAttribute(PH_MARK));
+      el2.removeAttribute(PH_MARK);
+    }
+  }
+  function onClick4(event) {
+    if (settings7.store.mode !== "manual") return;
+    if (!event.target.closest?.(`[${MARK3}]`)) return;
+    event.preventDefault();
+    rotate();
+  }
+  function paint3(doc = app.doc) {
+    const text = current();
+    let painted = 0;
+    const titles = /* @__PURE__ */ new Set();
+    for (const root of grokRoots(doc)) {
+      const title = findGreeting(root);
+      if (title && text) {
+        titles.add(title);
+        if (!seen.has(title)) {
+          seen.add(title);
+          if (shownOnce && settings7.store.mode === "refresh") index = nextIndex(index, phrases().length, settings7.store.order);
+          shownOnce = true;
+        }
+        const phrase = current();
+        if (!title.hasAttribute(MARK3)) title.style.setProperty("--askx-greet-size", doc.defaultView.getComputedStyle(title).fontSize);
+        if (title.getAttribute(MARK3) !== phrase) title.setAttribute(MARK3, phrase);
+        if (settings7.store.mode === "manual") title.setAttribute("data-askx-greet-click", "");
+        else title.removeAttribute("data-askx-greet-click");
+        painted += 1;
+      }
+      const composer = getComposer(root);
+      if (composer && composer.tagName === "TEXTAREA") {
+        if (settings7.store.placeholder && text) {
+          if (!composer.hasAttribute(PH_MARK)) composer.setAttribute(PH_MARK, composer.getAttribute("placeholder") || "");
+          if (composer.getAttribute("placeholder") !== current()) composer.setAttribute("placeholder", current());
+        } else if (composer.hasAttribute(PH_MARK)) {
+          composer.setAttribute("placeholder", composer.getAttribute(PH_MARK));
+          composer.removeAttribute(PH_MARK);
+        }
+      }
+    }
+    for (const el2 of doc.querySelectorAll(`[${MARK3}]`)) {
+      if (titles.has(el2)) continue;
+      el2.removeAttribute(MARK3);
+      el2.removeAttribute("data-askx-greet-click");
+      el2.style.removeProperty("--askx-greet-size");
+    }
+    return painted;
+  }
+  function restartTimer() {
+    const view = app.doc.defaultView;
+    view.clearInterval(timer2);
+    timer2 = 0;
+    if (settings7.store.mode === "interval") timer2 = view.setInterval(rotate, Math.max(1, settings7.store.intervalSec) * 1e3);
+  }
+  var customGreeting_default = definePlugin({
+    name: "CustomGreeting",
+    description: "把 Grok 空对话的问候语（How can I help you today?）换成你自己的句子，可以每次新对话、定时或点击时轮换（移植自 void++）。",
+    icon: ICONS.greeting,
+    tags: ["appearance"],
+    enabledByDefault: true,
+    settings: settings7,
+    start() {
+      const doc = app.doc;
+      if (!doc.getElementById(STYLE_ID5)) {
+        const style = doc.createElement("style");
+        style.id = STYLE_ID5;
+        style.textContent = css();
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      index = settings7.store.order === "random" ? nextIndex(-1, phrases().length, "random") : 0;
+      shownOnce = false;
+      schedule3 = timeThrottle(doc.defaultView, () => paint3(doc), 100);
+      paint3(doc);
+      observer3 = new doc.defaultView.MutationObserver((records) => {
+        if (touchesGrok(records, doc)) schedule3();
+      });
+      observer3.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["placeholder"] });
+      doc.addEventListener("click", onClick4, true);
+      restartTimer();
+    },
+    onSettingsChange() {
+      clearMarks(app.doc);
+      restartTimer();
+      paint3(app.doc);
+    },
+    stop() {
+      observer3?.disconnect();
+      observer3 = null;
+      schedule3?.cancel();
+      app.doc.defaultView.clearInterval(timer2);
+      app.doc.removeEventListener("click", onClick4, true);
+      clearMarks(app.doc);
+      app.doc.getElementById(STYLE_ID5)?.remove();
+    }
+  });
+
+  // src/plugins/drawerHeight.js
+  var MARK4 = "data-askx-height";
+  var STYLE_ID6 = "askx-drawer-height";
+  var LAYER = "data-askx-height-layer";
+  var TOP_GAP = 8;
+  var EDGE_GAP = 8;
+  var FULL_V_GAP = 0;
+  var settings8 = definePluginSettings({
+    preset: {
+      type: OptionType.SELECT,
+      label: "弹窗高度",
+      description: "“完整侧边栏”从窗口顶部一直到底部；“X 默认”不做改动。",
+      options: [
+        { value: "sidebar", label: "完整侧边栏" },
+        { value: "custom", label: "自定义" },
+        { value: "x", label: "X 默认" }
+      ],
+      default: "sidebar"
+    },
+    height: {
+      type: OptionType.SLIDER,
+      label: "自定义高度（px）",
+      description: "选“自定义”时使用；超过窗口时自动缩到窗口高度。",
+      min: 300,
+      max: 1600,
+      default: 640
+    }
+  });
+  function targetHeight({ preset, height }, drawerBottom, viewHeight = drawerBottom) {
+    const room = Math.max(0, Math.round(drawerBottom - TOP_GAP));
+    if (preset === "sidebar") return Math.max(0, Math.round(viewHeight - 2 * FULL_V_GAP));
+    if (preset === "custom") return Math.min(room, Math.max(300, Math.round(height)));
+    return 0;
+  }
+  function layerOf(drawer) {
+    return drawer.parentElement?.parentElement || null;
+  }
+  function clear2(drawer) {
+    drawer.removeAttribute(MARK4);
+    for (const prop of ["--askx-drawer-h", "--askx-drawer-shift", "--askx-drawer-mr", "--askx-drawer-w"]) drawer.style.removeProperty(prop);
+    layerOf(drawer)?.removeAttribute(LAYER);
+  }
+  var observer4 = null;
+  var schedule4 = null;
+  var onResize = null;
+  var settle = 0;
+  var unwatch = null;
+  var sizeObserver = null;
+  var watchSizes = null;
+  function apply3(doc = app.doc) {
+    const drawer = getDrawer(doc);
+    if (!drawer) return 0;
+    const open2 = Boolean(getComposer(drawer));
+    const view = doc.defaultView;
+    const store = settings8.store;
+    const rect = drawer.getBoundingClientRect();
+    const shifted = parseFloat(drawer.style.getPropertyValue("--askx-drawer-shift")) || 0;
+    const bottom = rect.bottom - shifted;
+    const h = open2 ? targetHeight(store, bottom, view.innerHeight) : 0;
+    if (!h) {
+      if (drawer.hasAttribute(MARK4)) clear2(drawer);
+      return 0;
+    }
+    const full = store.preset === "sidebar";
+    const set = (prop, value) => {
+      if (drawer.style.getPropertyValue(prop) !== value) drawer.style.setProperty(prop, value);
+    };
+    set("--askx-drawer-h", `${h}px`);
+    if (full) {
+      const now = drawer.getBoundingClientRect();
+      if (drawer.hasAttribute(MARK4)) set("--askx-drawer-shift", `${Math.round(shifted + FULL_V_GAP - now.top)}px`);
+      else set("--askx-drawer-shift", `${Math.round(view.innerHeight - FULL_V_GAP - bottom)}px`);
+    } else {
+      set("--askx-drawer-shift", "0px");
+    }
+    set("--askx-drawer-mr", full ? `${EDGE_GAP}px` : "");
+    const side = full ? doc.querySelector('[data-testid="sidebarColumn"]')?.getBoundingClientRect() : null;
+    const right = doc.documentElement.clientWidth - EDGE_GAP;
+    set("--askx-drawer-w", side?.width ? `${Math.round(right - (side.left - EDGE_GAP))}px` : "");
+    if (!drawer.hasAttribute(MARK4)) {
+      drawer.setAttribute(MARK4, "");
+      if (full) schedule4?.();
+    }
+    const layer = layerOf(drawer);
+    if (layer) {
+      if (full && !layer.hasAttribute(LAYER)) layer.setAttribute(LAYER, "");
+      else if (!full && layer.hasAttribute(LAYER)) layer.removeAttribute(LAYER);
+    }
+    return h;
+  }
+  function reset(doc) {
+    for (const el2 of doc.querySelectorAll(`[${MARK4}]`)) clear2(el2);
+    for (const el2 of doc.querySelectorAll(`[${LAYER}]`)) el2.removeAttribute(LAYER);
+  }
+  var drawerHeight_default = definePlugin({
+    name: "DrawerHeight",
+    description: "调整 Grok 小窗的高度。默认拉满整个右侧边栏，也可以自定义高度或保持 X 默认。",
+    icon: ICONS.height,
+    tags: ["appearance"],
+    enabledByDefault: true,
+    settings: settings8,
+    start() {
+      const doc = app.doc;
+      const view = doc.defaultView;
+      if (!doc.getElementById(STYLE_ID6)) {
+        const style = doc.createElement("style");
+        style.id = STYLE_ID6;
+        style.textContent = `[${MARK4}]{height:var(--askx-drawer-h)!important;max-height:none!important;top:var(--askx-drawer-shift,0px)!important}[${MARK4}][style*="--askx-drawer-mr"]{margin-right:var(--askx-drawer-mr)!important}[${MARK4}][style*="--askx-drawer-w"]{width:var(--askx-drawer-w)!important;max-width:none!important}[${MARK4}]>div:first-child{height:100%!important;min-height:100%!important;max-height:none!important}[${LAYER}]{z-index:1!important}`;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      schedule4 = frameThrottle(view, () => apply3(doc));
+      apply3(doc);
+      observer4 = new view.MutationObserver((records) => {
+        if (touchesGrok(records, doc)) {
+          schedule4();
+          watchSizes?.();
+        }
+      });
+      observer4.observe(doc.body, { childList: true, subtree: true });
+      onResize = () => {
+        schedule4();
+        view.clearTimeout(settle);
+        settle = view.setTimeout(() => apply3(doc), 400);
+      };
+      const onMoved = (event) => {
+        if (event.propertyName === "transform" || event.propertyName === "top") schedule4();
+      };
+      let watched = null;
+      let watchedNodes = [];
+      sizeObserver = typeof view.ResizeObserver === "function" ? new view.ResizeObserver(() => onResize()) : null;
+      watchSizes = () => {
+        const drawer = getDrawer(doc);
+        if (drawer === watched) return;
+        watched = drawer;
+        for (const node2 of watchedNodes) node2.removeEventListener("transitionend", onMoved);
+        watchedNodes = [];
+        sizeObserver?.disconnect();
+        if (!drawer) return;
+        const layer = layerOf(drawer);
+        for (let node2 = drawer.parentElement; node2 && node2 !== doc.body; node2 = node2.parentElement) {
+          node2.addEventListener("transitionend", onMoved);
+          watchedNodes.push(node2);
+          if (node2 === layer?.parentElement) break;
+        }
+        if (drawer.parentElement) sizeObserver?.observe(drawer.parentElement);
+      };
+      unwatch = () => {
+        for (const node2 of watchedNodes) node2.removeEventListener("transitionend", onMoved);
+        watchedNodes = [];
+      };
+      watchSizes();
+      view.addEventListener("resize", onResize);
+      view.visualViewport?.addEventListener("resize", onResize);
+    },
+    onSettingsChange: () => apply3(),
+    stop() {
+      observer4?.disconnect();
+      observer4 = null;
+      const view = app.doc.defaultView;
+      if (onResize) {
+        view.removeEventListener("resize", onResize);
+        view.visualViewport?.removeEventListener("resize", onResize);
+      }
+      view.clearTimeout(settle);
+      unwatch?.();
+      unwatch = null;
+      sizeObserver?.disconnect();
+      sizeObserver = null;
+      watchSizes = null;
+      onResize = null;
+      schedule4?.cancel();
+      reset(app.doc);
+      app.doc.getElementById(STYLE_ID6)?.remove();
+    }
+  });
+
+  // src/plugins/followUp.js
+  var DEFAULT_FOLLOW_UP = "{quote}\n\n";
+  var settings9 = definePluginSettings({
+    template: {
+      type: OptionType.STRING,
+      multiline: true,
+      label: "追问模板",
+      description: "占位符：{text} 原文、{quote} 每行加 > 的原文。写在输入框已有内容的后面。",
+      default: DEFAULT_FOLLOW_UP
+    }
+  });
+  var followUp_default = definePlugin({
+    name: "FollowUp",
+    description: "在 Grok 小窗（或 Grok 全页）里划选回复中的文字，点“追问”把它引用到当前对话的输入框，接着问。",
+    icon: ICONS.followUp,
+    tags: ["composer", "messages"],
+    enabledByDefault: true,
+    settings: settings9,
+    askOrder: 40,
+    toolbarButtons: () => [{ id: "follow-up", label: "追问", icon: ICONS.followUp, className: "askx-main", contexts: ["grok"], order: 0 }],
+    onAsk(ctx2) {
+      if (ctx2.trigger.id === "follow-up") ctx2.template = settings9.store.template;
+    }
+  });
+
+  // src/plugins/grokScrollbars.js
+  var STYLE_ID7 = "askx-grok-scrollbars";
+  var settings10 = definePluginSettings({
+    width: {
+      type: OptionType.SELECT,
+      label: "粗细",
+      description: "“细”是浏览器的细滚动条；“隐藏”不显示滚动条，仍可用滚轮和触控板滚动。",
+      options: [
+        { value: "thin", label: "细" },
+        { value: "none", label: "隐藏" }
+      ],
+      default: "thin"
+    }
+  });
+  function css2({ width } = settings10.store) {
+    const scope = `${GROK}, ${GROK} *, html[${PAGE_FLAG}]`;
+    if (width === "none") return `:is(${scope}){scrollbar-width:none!important}`;
+    return `:is(${scope}){scrollbar-width:thin!important;scrollbar-color:rgba(128,134,139,.45) transparent!important}:is(${scope}):hover{scrollbar-color:rgba(128,134,139,.7) transparent!important}`;
+  }
+  var stop3 = null;
+  var grokScrollbars_default = definePlugin({
+    name: "GrokScrollbars",
+    description: "Grok 小窗和 Grok 页面里的滚动条去掉灰色导轨，只留一条细的圆角滑块，悬停时稍微加深。不影响 X 其他页面的滚动条。",
+    icon: ICONS.scrollbar,
+    tags: ["appearance"],
+    enabledByDefault: true,
+    settings: settings10,
+    start() {
+      addStyle(app.doc, STYLE_ID7, css2());
+      stop3 = watchGrok(app.doc);
+    },
+    onSettingsChange: () => addStyle(app.doc, STYLE_ID7, css2()),
+    stop() {
+      stop3?.();
+      stop3 = null;
+      app.doc.getElementById(STYLE_ID7)?.remove();
+    }
+  });
+
+  // src/plugins/hideFollowUps.js
+  var MARK5 = "data-askx-hidden-followups";
+  var STYLE_ID8 = "askx-hide-followups";
+  var settings11 = definePluginSettings({
+    keepLatest: {
+      type: OptionType.BOOLEAN,
+      label: "保留最新消息的猜你想问",
+      description: "只隐藏较早回复下的建议问题，最新一条回复下的照常显示。",
+      default: true
+    }
+  });
+  var buttonsOf = (el2) => [...el2.querySelectorAll('button, [role="button"]')];
+  function isActionBar(el2) {
+    const buttons = buttonsOf(el2);
+    return buttons.length >= 3 && !el2.textContent.trim() && buttons.every((b) => b.getAttribute("aria-label"));
+  }
+  function isFollowUpBlock(el2) {
+    const buttons = buttonsOf(el2);
+    return buttons.length >= 1 && buttons.every((b) => !b.getAttribute("aria-label") && b.querySelector("svg") && b.textContent.trim()) && Boolean(el2.previousElementSibling && isActionBar(el2.previousElementSibling));
+  }
+  function findFollowUps(root) {
+    const list = messageList(root);
+    if (!list) return [];
+    const out = [];
+    for (const bar2 of list.querySelectorAll("div")) {
+      if (!isActionBar(bar2)) continue;
+      const next = bar2.nextElementSibling;
+      if (next && isFollowUpBlock(next)) out.push(next);
+    }
+    return out;
+  }
+  function hideAll(doc = app.doc, keepLatest = settings11.store.keepLatest) {
+    const hidden = /* @__PURE__ */ new Set();
+    for (const root of grokRoots(doc)) {
+      const blocks = findFollowUps(root);
+      const keep = keepLatest ? blocks[blocks.length - 1] : null;
+      for (const block of blocks) if (block !== keep) hidden.add(block);
+    }
+    for (const block of hidden) if (!block.hasAttribute(MARK5)) block.setAttribute(MARK5, "");
+    for (const el2 of doc.querySelectorAll(`[${MARK5}]`)) if (!hidden.has(el2)) el2.removeAttribute(MARK5);
+    return hidden.size;
+  }
+  var stop4 = null;
+  var hideFollowUps_default = definePlugin({
+    name: "HideFollowUps",
+    description: "隐藏 Grok 回复下方的“猜你想问”建议问题；默认保留最新一条回复下的。关闭插件时这些问题照常显示（并由 NoSideScroll 自动换行）。",
+    icon: ICONS.eyeOff,
+    tags: ["declutter"],
+    enabledByDefault: true,
     settings: settings11,
+    onSettingsChange: () => hideAll(app.doc),
+    start() {
+      addStyle(app.doc, STYLE_ID8, `[${MARK5}]{display:none!important}`);
+      stop4 = watchGrok(app.doc, hideAll);
+    },
+    stop() {
+      stop4?.();
+      stop4 = null;
+      app.doc.getElementById(STYLE_ID8)?.remove();
+      for (const el2 of app.doc.querySelectorAll(`[${MARK5}]`)) el2.removeAttribute(MARK5);
+    }
+  });
+
+  // src/replyBold.js
+  var VIEW = "askx-rb";
+  var SOURCE = "data-askx-rb-src";
+  var STYLE_ID9 = "askx-reply-bold-style";
+  var SKIP3 = 'code, pre, textarea, [contenteditable="true"], .askx-um, .askx-rb';
+  var PAIR = /\*\*(?=\S)([^*\n]+?)\*\*/g;
+  function findBold(text) {
+    const out = [];
+    for (const m of String(text).matchAll(PAIR)) {
+      if (/\s$/.test(m[1])) continue;
+      out.push({ start: m.index, end: m.index + m[0].length });
+    }
+    return out;
+  }
+  function boldTextNode(doc, node2) {
+    const text = node2.nodeValue;
+    const pairs = findBold(text);
+    if (!pairs.length) return false;
+    const frag = doc.createDocumentFragment();
+    let at = 0;
+    for (const { start: start2, end } of pairs) {
+      if (start2 > at) frag.appendChild(doc.createTextNode(text.slice(at, start2)));
+      const strong = doc.createElement("strong");
+      strong.textContent = text.slice(start2 + 2, end - 2);
+      frag.appendChild(strong);
+      at = end;
+    }
+    if (at < text.length) frag.appendChild(doc.createTextNode(text.slice(at)));
+    node2.parentNode.replaceChild(frag, node2);
+    return true;
+  }
+  function textNodesWithPairs(doc, el2) {
+    const walker = doc.createTreeWalker(el2, 4, {
+      acceptNode: (n) => n.nodeValue.includes("**") && !n.parentElement?.closest(SKIP3) && findBold(n.nodeValue).length ? 1 : 3
+    });
+    const out = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n);
+    return out;
+  }
+  function blockOf(doc, node2, stop11) {
+    for (let e = node2.parentElement; e && e !== stop11; e = e.parentElement) {
+      if (doc.defaultView.getComputedStyle(e).display !== "inline") return e;
+    }
+    return null;
+  }
+  var viewFor = (block) => {
+    const next = block.nextElementSibling;
+    return next?.classList.contains(VIEW) && next.dataset.src === block.dataset.askxRbId ? next : null;
+  };
+  var nextId = 1;
+  function redraw(doc, block) {
+    const text = block.textContent;
+    let view = viewFor(block);
+    if (view && view.dataset.text === text) return;
+    view?.remove();
+    view = block.cloneNode(true);
+    view.removeAttribute(SOURCE);
+    view.removeAttribute("data-askx-rb-id");
+    for (const n of view.querySelectorAll("[id]")) n.removeAttribute("id");
+    view.removeAttribute("id");
+    let changed = false;
+    for (const n of textNodesWithPairs(doc, view)) changed = boldTextNode(doc, n) || changed;
+    if (!changed) {
+      block.removeAttribute(SOURCE);
+      return;
+    }
+    view.classList.add(VIEW);
+    if (!block.dataset.askxRbId) block.dataset.askxRbId = String(nextId++);
+    view.dataset.src = block.dataset.askxRbId;
+    view.dataset.text = text;
+    block.after(view);
+    block.setAttribute(SOURCE, "");
+  }
+  function paint4(doc) {
+    const blocks = /* @__PURE__ */ new Set();
+    for (const root of grokRoots(doc)) {
+      for (const { el: el2, role } of getMessages(root)) {
+        if (role !== "assistant") continue;
+        for (const n of textNodesWithPairs(doc, el2)) {
+          const block = blockOf(doc, n, el2);
+          if (block) blocks.add(block);
+        }
+        for (const b of el2.querySelectorAll(`[${SOURCE}]`)) blocks.add(b);
+      }
+    }
+    for (const block of blocks) redraw(doc, block);
+    for (const view of doc.querySelectorAll(`.${VIEW}`)) {
+      const prev = view.previousElementSibling;
+      if (!prev || prev.dataset.askxRbId !== view.dataset.src || !prev.hasAttribute(SOURCE)) view.remove();
+    }
+  }
+  var stop5 = null;
+  function startReplyBold(doc) {
+    addStyle(doc, STYLE_ID9, `[${SOURCE}]{display:none!important}.${VIEW} strong{font-weight:700}`);
+    stop5 = watchGrok(doc, paint4);
+    paint4(doc);
+  }
+  function stopReplyBold(doc) {
+    stop5?.();
+    stop5 = null;
+    for (const view of doc.querySelectorAll(`.${VIEW}`)) view.remove();
+    for (const el2 of doc.querySelectorAll(`[${SOURCE}]`)) el2.removeAttribute(SOURCE);
+    doc.getElementById(STYLE_ID9)?.remove();
+  }
+
+  // src/userMessages.js
+  var VIEW2 = "askx-um";
+  var SOURCE2 = "data-askx-um-src";
+  var STYLE_ID10 = "askx-user-messages";
+  var OBSERVE = { childList: true, subtree: true, characterData: true };
+  var transforms = /* @__PURE__ */ new Map();
+  var sourceOf = /* @__PURE__ */ new WeakMap();
+  var observer5 = null;
+  var observedDoc = null;
+  function roots(doc) {
+    const list = [...doc.querySelectorAll(DRAWER)];
+    if (onGrokPage(doc)) {
+      const main = doc.querySelector("main");
+      if (main) list.push(main);
+    }
+    return list;
+  }
+  var isView = (el2) => Boolean(el2?.closest?.(`.${VIEW2}`));
+  function viewFor2(block) {
+    const next = block.nextElementSibling;
+    return next?.classList.contains(VIEW2) && sourceOf.get(next) === block ? next : null;
+  }
+  function build(doc, block, text) {
+    const el2 = block.cloneNode(true);
+    el2.removeAttribute("id");
+    for (const n of el2.querySelectorAll("[id]")) n.removeAttribute("id");
+    el2.removeAttribute(SOURCE2);
+    el2.classList.add(VIEW2);
+    let changed = false;
+    for (const t of [...transforms.values()].sort((a, b) => a.order - b.order)) {
+      try {
+        changed = t.apply(doc, el2, text) || changed;
+      } catch (error) {
+        console.error("[Ask X] message transform failed", error);
+      }
+    }
+    return changed ? el2 : null;
+  }
+  function unhide(block) {
+    block.removeAttribute(SOURCE2);
+    viewFor2(block)?.remove();
+  }
+  function refreshBlock(doc, block) {
+    if (isView(block) || block.closest('textarea, [contenteditable="true"]')) return 0;
+    if (!isUserMessage(block)) return 0;
+    const text = block.textContent;
+    const current2 = viewFor2(block);
+    if (current2 && current2.dataset.text === text) return 0;
+    const next = transforms.size ? build(doc, block, text) : null;
+    if (!next) {
+      if (current2 || block.hasAttribute(SOURCE2)) unhide(block);
+      return 0;
+    }
+    next.dataset.text = text;
+    sourceOf.set(next, block);
+    if (current2) current2.replaceWith(next);
+    else block.after(next);
+    block.setAttribute(SOURCE2, "");
+    return 1;
+  }
+  function sweep(scope) {
+    for (const view of scope.querySelectorAll(`.${VIEW2}`)) {
+      const block = sourceOf.get(view);
+      if (!block || !block.isConnected || block.nextElementSibling !== view) view.remove();
+    }
+  }
+  function refreshAll(doc = app.doc) {
+    let count = 0;
+    for (const root of roots(doc)) {
+      sweep(root);
+      for (const block of root.querySelectorAll("div[dir]")) count += refreshBlock(doc, block);
+    }
+    return count;
+  }
+  function refreshFromMutations(records, doc = app.doc) {
+    const blocks = /* @__PURE__ */ new Set();
+    const scopes = /* @__PURE__ */ new Set();
+    const consider = (node2) => {
+      const el2 = node2?.nodeType === 1 ? node2 : node2?.parentElement;
+      if (!el2 || isView(el2)) return;
+      const root = rootOf(el2, doc);
+      if (!root) {
+        if (node2.nodeType === 1 && (node2.matches?.(DRAWER) || node2.querySelector?.(DRAWER))) {
+          for (const r of roots(doc)) for (const b of r.querySelectorAll("div[dir]")) blocks.add(b);
+        }
+        return;
+      }
+      scopes.add(root);
+      const own = el2.closest("div[dir]");
+      if (own) blocks.add(own);
+      if (node2.nodeType === 1) for (const inner of node2.querySelectorAll("div[dir]")) blocks.add(inner);
+    };
+    for (const record of records) {
+      if (record.type === "characterData") consider(record.target);
+      else {
+        for (const added of record.addedNodes) consider(added);
+        if (record.removedNodes?.length) {
+          const root = rootOf(record.target, doc);
+          if (root) scopes.add(root);
+        }
+      }
+    }
+    for (const scope of scopes) sweep(scope);
+    let count = 0;
+    for (const block of blocks) if (block.isConnected) count += refreshBlock(doc, block);
+    return count;
+  }
+  function restoreAll(doc) {
+    for (const view of doc.querySelectorAll(`.${VIEW2}`)) view.remove();
+    for (const block of doc.querySelectorAll(`[${SOURCE2}]`)) block.removeAttribute(SOURCE2);
+  }
+  function watcher(doc) {
+    const mo = new doc.defaultView.MutationObserver((records) => {
+      mo.disconnect();
+      try {
+        refreshFromMutations(records, doc);
+      } finally {
+        if (observer5 === mo && doc.body) mo.observe(doc.body, OBSERVE);
+      }
+    });
+    mo.observe(doc.body, OBSERVE);
+    return mo;
+  }
+  function ensureObserver() {
+    const doc = app.doc;
+    if (observer5 && observedDoc !== doc) {
+      observer5.disconnect();
+      observer5 = null;
+    }
+    if (transforms.size && !observer5) {
+      observedDoc = doc;
+      if (!doc.getElementById(STYLE_ID10)) {
+        const style = doc.createElement("style");
+        style.id = STYLE_ID10;
+        style.textContent = `[${SOURCE2}]{display:none!important}`;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      observer5 = watcher(doc);
+    } else if (!transforms.size && observer5) {
+      observer5.disconnect();
+      observer5 = null;
+      doc.getElementById(STYLE_ID10)?.remove();
+    }
+  }
+  function setTransform(name, transform3) {
+    if (transform3) transforms.set(name, transform3);
+    else transforms.delete(name);
+    const doc = app.doc;
+    restoreAll(doc);
+    ensureObserver();
+    return transforms.size ? refreshAll(doc) : 0;
+  }
+
+  // src/plugins/markdown.js
+  var DONE = "data-askx-md";
+  var STYLE_ID11 = "askx-markdown";
+  var HINT = /(^|\n)(#{1,6}\s|\s*[-*+]\s+\S|\s*\d+[.)]\s+\S|```|(?:-{3,}|\*{3,}|_{3,})\s*(\n|$))|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|(^|[\s(])\*[^*\s][^*\n]*\*(?=$|[\s).,!?:;])|(^|[\s(])_[^_\s][^_\n]*_(?=$|[\s).,!?:;])/;
+  function looksLikeMarkdown(text) {
+    return HINT.test(String(text || ""));
+  }
+  var INLINE = [
+    { re: /`([^`\n]+)`/, make: (doc, m) => node(doc, "code", "askx-md-code", [doc.createTextNode(m[1])]) },
+    { re: /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/, make: (doc, m) => link(doc, m[2], m[1]) },
+    { re: /(\*\*|__)([^\n]+?)\1/, make: (doc, m) => node(doc, "strong", "", inline(doc, m[2])) },
+    { re: /~~([^~\n]+)~~/, make: (doc, m) => node(doc, "s", "", inline(doc, m[1])) },
+    { re: /(^|[\s(])\*([^*\s][^*\n]*?)\*(?=$|[\s).,!?:;，。！？：；])/, lead: true, make: (doc, m) => node(doc, "em", "", inline(doc, m[2])) },
+    { re: /(^|[\s(])_([^_\s][^_\n]*?)_(?=$|[\s).,!?:;，。！？：；])/, lead: true, make: (doc, m) => node(doc, "em", "", inline(doc, m[2])) },
+    { re: /https?:\/\/[^\s<>"'）)]+[^\s<>"'）).,!?:;，。！？：；]/, make: (doc, m) => link(doc, m[0], m[0]) }
+  ];
+  function node(doc, tag, cls, children = []) {
+    const el2 = doc.createElement(tag);
+    if (cls) el2.className = cls;
+    for (const child of children) el2.appendChild(child);
+    return el2;
+  }
+  function link(doc, href, text) {
+    const a = node(doc, "a", "askx-md-link", [doc.createTextNode(text)]);
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    return a;
+  }
+  function inline(doc, text) {
+    const out = [];
+    let rest = String(text);
+    while (rest) {
+      let best = null;
+      for (const rule of INLINE) {
+        const m = rule.re.exec(rest);
+        if (!m) continue;
+        const start2 = m.index + (rule.lead ? m[1].length : 0);
+        if (!best || start2 < best.start) best = { rule, m, start: start2, end: m.index + m[0].length };
+      }
+      if (!best) {
+        out.push(doc.createTextNode(rest));
+        break;
+      }
+      if (best.start) out.push(doc.createTextNode(rest.slice(0, best.start)));
+      out.push(best.rule.make(doc, best.m));
+      rest = rest.slice(best.end);
+    }
+    return out;
+  }
+  function render(doc, text) {
+    const frag = doc.createDocumentFragment();
+    const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+    let para = [];
+    const flush = () => {
+      if (!para.length) return;
+      const p = node(doc, "div", "askx-md-p");
+      para.forEach((line, i) => {
+        if (i) p.appendChild(doc.createTextNode("\n"));
+        if (line.startsWith(">")) p.appendChild(doc.createTextNode(line));
+        else for (const n of inline(doc, line)) p.appendChild(n);
+      });
+      frag.appendChild(p);
+      para = [];
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const fence = /^\s*```(.*)$/.exec(line);
+      if (fence) {
+        flush();
+        const body = [];
+        for (i += 1; i < lines.length && !/^\s*```\s*$/.test(lines[i]); i += 1) body.push(lines[i]);
+        const pre = node(doc, "pre", "askx-md-pre", [node(doc, "code", "", [doc.createTextNode(body.join("\n"))])]);
+        if (fence[1].trim()) pre.dataset.lang = fence[1].trim();
+        frag.appendChild(pre);
+        continue;
+      }
+      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (heading) {
+        flush();
+        frag.appendChild(node(doc, "div", `askx-md-h askx-md-h${heading[1].length}`, inline(doc, heading[2])));
+        continue;
+      }
+      if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        flush();
+        frag.appendChild(node(doc, "hr", "askx-md-hr"));
+        continue;
+      }
+      const item = /^\s*([-*+]|\d+[.)])\s+(.*)$/.exec(line);
+      if (item) {
+        flush();
+        const ordered = /\d/.test(item[1]);
+        const list = node(doc, ordered ? "ol" : "ul", "askx-md-list");
+        if (ordered) list.start = parseInt(item[1], 10) || 1;
+        for (; i < lines.length; i += 1) {
+          const m = /^\s*([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
+          if (!m || /\d/.test(m[1]) !== ordered) {
+            i -= 1;
+            break;
+          }
+          list.appendChild(node(doc, "li", "", inline(doc, m[2])));
+        }
+        frag.appendChild(list);
+        continue;
+      }
+      if (!line.trim()) {
+        flush();
+        continue;
+      }
+      para.push(line);
+    }
+    flush();
+    return frag;
+  }
+  var transform = {
+    order: 10,
+    apply(doc, el2, text) {
+      if (!looksLikeMarkdown(text)) return false;
+      el2.textContent = "";
+      el2.appendChild(render(doc, text));
+      el2.setAttribute(DONE, "");
+      return true;
+    }
+  };
+  var CSS3 = `
+[${DONE}] .askx-md-p { white-space: pre-wrap; }
+[${DONE}] .askx-md-p + .askx-md-p, [${DONE}] .askx-md-p + .askx-md-list, [${DONE}] .askx-md-list + .askx-md-p,
+[${DONE}] .askx-md-pre + *, [${DONE}] * + .askx-md-pre, [${DONE}] .askx-md-h + *, [${DONE}] * + .askx-md-h { margin-top: 0.6em; }
+[${DONE}] .askx-md-h { font-weight: 700; line-height: 1.3; }
+[${DONE}] .askx-md-h1 { font-size: 1.35em; } [${DONE}] .askx-md-h2 { font-size: 1.22em; } [${DONE}] .askx-md-h3 { font-size: 1.1em; }
+[${DONE}] .askx-md-list { margin: 0; padding-left: 1.4em; white-space: normal; }
+[${DONE}] .askx-md-list li + li { margin-top: 0.2em; }
+[${DONE}] .askx-md-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; padding: 0.1em 0.35em; border-radius: 4px; background: rgba(127, 127, 127, 0.22); }
+[${DONE}] .askx-md-pre { margin: 0; padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.28); overflow-x: auto; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; line-height: 1.5; }
+[${DONE}] .askx-md-link { color: rgb(29, 155, 240); text-decoration: none; }
+[${DONE}] .askx-md-link:hover { text-decoration: underline; }
+[${DONE}] .askx-md-hr { border: 0; border-top: 1px solid rgba(127, 127, 127, 0.4); margin: 0.6em 0; }
+`;
+  var stopRescan = null;
+  var markdown_default = definePlugin({
+    name: "Markdown",
+    description: "像 grok.com 一样把你发给 Grok 的消息按 Markdown 显示：标题、粗体、斜体、删除线、代码、代码块、列表、链接和分隔线；Grok 回复里漏渲染的 **粗体** 也补上（不改动 X 的消息内容）。",
+    icon: ICONS.markdown,
+    tags: ["messages"],
+    enabledByDefault: true,
     start() {
       const doc = app.doc;
       if (!doc.getElementById(STYLE_ID11)) {
@@ -3925,29 +4073,16 @@ ${PAD}` : "";
         style.textContent = CSS3;
         (doc.head || doc.documentElement).appendChild(style);
       }
-      if (settings11.store.promptOnly) cleanEntries();
-      offInsert = on("askInsert", (quote) => {
-        inserted.push(quote);
-        if (inserted.length > 20) inserted.shift();
-      });
-      doc.addEventListener("keydown", onKeyDown2, true);
-      doc.addEventListener("input", onInput2, true);
-      doc.addEventListener("click", onClick4, true);
-      doc.addEventListener("focusout", onFocusOut, true);
-    },
-    onSettingsChange() {
-      if (settings11.store.promptOnly) cleanEntries();
+      setTransform("markdown", transform);
+      stopRescan = watchGrok(doc, (d) => refreshAll(d));
+      startReplyBold(doc);
     },
     stop() {
-      const doc = app.doc;
-      offInsert?.();
-      offInsert = null;
-      doc.removeEventListener("keydown", onKeyDown2, true);
-      doc.removeEventListener("input", onInput2, true);
-      doc.removeEventListener("click", onClick4, true);
-      doc.removeEventListener("focusout", onFocusOut, true);
-      stopBrowsing();
-      doc.getElementById(STYLE_ID11)?.remove();
+      stopRescan?.();
+      stopRescan = null;
+      stopReplyBold(app.doc);
+      setTransform("markdown", null);
+      app.doc.getElementById(STYLE_ID11)?.remove();
     }
   });
 
@@ -5096,14 +5231,44 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     event.stopImmediatePropagation();
     return true;
   }
+  function askAbout(post, prompt) {
+    const text = postText(post) || findPostSource(post).url;
+    void ask({ text, node: post, context: "post" }, { id: "post-grok", prompt });
+  }
+  var DOUBLE_MS2 = 250;
+  var pending2 = 0;
   function onClick5(event) {
     if (!swallow(event)) return;
     const post = event.target.closest(POST2);
-    const text = postText(post) || findPostSource(post).url;
-    void ask({ text, node: post, context: "post" }, { id: "post-grok" });
+    const view = app.doc.defaultView;
+    view.clearTimeout(pending2);
+    pending2 = 0;
+    if (event.detail >= 2) {
+      askAbout(post, recentPrompts()[0]);
+      return;
+    }
+    if (event.detail === 0) {
+      askAbout(post);
+      return;
+    }
+    pending2 = view.setTimeout(() => {
+      pending2 = 0;
+      askAbout(post);
+    }, DOUBLE_MS2);
+  }
+  function onContextMenu(event) {
+    const button = postGrokButton(event.target);
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const post = button.closest(POST2);
+    openPromptMenu(app.doc, button, recentPrompts(), (prompt) => askAbout(post, prompt));
   }
   function onKey(event) {
-    if ((event.key === "Enter" || event.key === " ") && postGrokButton(event.target)) onClick5(event);
+    if ((event.key === "Enter" || event.key === " ") && postGrokButton(event.target)) {
+      if (!swallow(event)) return;
+      askAbout(event.target.closest(POST2));
+    }
   }
   var TIP_MARK = "data-askx-tip";
   var STYLE_ID18 = "askx-post-grok";
@@ -5144,7 +5309,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   var PRESS = ["pointerdown", "mousedown", "pointerup", "mouseup", "touchstart", "touchend"];
   var postGrok_default = definePlugin({
     name: "PostGrok",
-    description: "接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；悬停提示也可以自定义；可选自动发送、无痕。",
+    description: "接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；双击用上次发过的提示词，右键从最近的提示词里选；悬停提示也可以自定义；可选自动发送、无痕。",
     icon: ICONS.quote,
     tags: ["composer"],
     enabledByDefault: true,
@@ -5153,7 +5318,8 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     askOrder: 95,
     onAsk(ctx2) {
       if (ctx2.trigger.id !== "post-grok") return;
-      const prompt = String(settings17.store.prompt || "").trim();
+      const prompt = String(ctx2.prompt || settings17.store.prompt || "").trim();
+      ctx2.prompt = "";
       ctx2.template = prompt ? `{url}
 
 ${prompt}` : "{url}";
@@ -5167,6 +5333,7 @@ ${prompt}` : "{url}";
       watchTips(doc);
       for (const type of PRESS) doc.addEventListener(type, swallow, true);
       doc.addEventListener("click", onClick5, true);
+      doc.addEventListener("contextmenu", onContextMenu, true);
       doc.addEventListener("keydown", onKey, true);
     },
     stop() {
@@ -5179,7 +5346,11 @@ ${prompt}` : "{url}";
       for (const el2 of doc.querySelectorAll(`[${TIP_MARK}]`)) el2.removeAttribute(TIP_MARK);
       for (const type of PRESS) doc.removeEventListener(type, swallow, true);
       doc.removeEventListener("click", onClick5, true);
+      doc.removeEventListener("contextmenu", onContextMenu, true);
       doc.removeEventListener("keydown", onKey, true);
+      doc.defaultView.clearTimeout(pending2);
+      pending2 = 0;
+      closePromptMenu();
     }
   });
 
@@ -5517,7 +5688,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.23.0", release: "20261102" };
+  var META = { name: "Ask X", version: "1.24.0", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
@@ -6555,7 +6726,7 @@ ${prompt}` : "{url}";
     if (doc.getElementById(STYLE_ID23)) return;
     const style = doc.createElement("style");
     style.id = STYLE_ID23;
-    style.textContent = CSS11;
+    style.textContent = CSS11 + PROMPT_MENU_CSS;
     (doc.head || doc.documentElement).appendChild(style);
   }
 

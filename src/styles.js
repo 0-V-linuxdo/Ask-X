@@ -1,3 +1,5 @@
+import { PROMPT_MENU_CSS } from './ui/promptMenu.js';
+
 const STYLE_ID = 'askx-styles';
 
 const CSS = `
@@ -650,6 +652,6 @@ export function injectStyles(doc = document) {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = CSS;
+  style.textContent = CSS + PROMPT_MENU_CSS;
   (doc.head || doc.documentElement).appendChild(style);
 }

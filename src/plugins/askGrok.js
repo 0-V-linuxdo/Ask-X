@@ -8,8 +8,9 @@ import { askGrok, getComposer, sendPrompt, writePrompt } from '../drawer.js';
 import { rootOf } from '../grok.js';
 import { ICONS } from '../icons.js';
 import { findPostSource } from '../source.js';
-import { DEFAULT_TEMPLATE, cleanSelection, renderTemplate } from '../text.js';
+import { DEFAULT_TEMPLATE, appendPrompt, cleanSelection, renderTemplate } from '../text.js';
 import { createToolbar } from '../toolbar.js';
+import { recentPrompts } from './inputHistory.js';
 
 let toolbar = null;
 let unsubscribe = null;
@@ -34,6 +35,9 @@ export function buildRequest(selection, trigger) {
     selection,
     trigger,
     template: DEFAULT_TEMPLATE,
+    // A prompt picked with a double or right click; appended to the quote
+    // unless a plugin (PostGrok) puts it in its own template.
+    prompt: trigger?.prompt || '',
     maxLength: 2_000,
     plan: { newChat: false, privateMode: 'keep', writeMode: 'append', autoSend: false }
   };
@@ -59,7 +63,8 @@ export async function ask(selection, trigger = { id: 'ask' }) {
     return result;
   }
   const source = findPostSource(selection.node);
-  const prompt = renderTemplate(ctx.template, { text, url: source.url, author: source.author });
+  const quoted = renderTemplate(ctx.template, { text, url: source.url, author: source.author });
+  const prompt = ctx.prompt ? appendPrompt(quoted, ctx.prompt) : quoted;
   // Lets InputHistory tell the quoted material apart from what you type.
   emit('askInsert', { text, url: source.url, author: source.author });
   busy = true;
@@ -102,11 +107,13 @@ export default definePlugin({
   required: true,
   tags: ['composer'],
   askOrder: 0,
-  toolbarButtons: () => [{ id: 'ask', label: '问 Grok', icon: ICONS.quote, className: 'askx-main', order: 0 }],
+  // Double click: quote + your last prompt; right click: pick a recent one.
+  toolbarButtons: () => [{ id: 'ask', label: '问 Grok', hint: '问 Grok（双击：带上次的提示词；右键：选最近的提示词）', icon: ICONS.quote, className: 'askx-main', order: 0, prompts: true }],
   start() {
     toolbar = createToolbar({
       getButtons: toolbarButtons,
-      onAsk: (selection, button, event) => void ask(selection, { ...button, altKey: Boolean(event?.altKey) })
+      onAsk: (selection, button, event, prompt) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt }),
+      recentPrompts
     });
     unsubscribe = app.manager.subscribe(() => toolbar?.rebuild());
   },
