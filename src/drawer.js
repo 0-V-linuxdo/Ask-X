@@ -179,7 +179,11 @@ export function composeValue(existing, prompt, mode) {
   const body = prompt.replace(/\n+$/u, '');
   const tail = /\n\s*$/u.test(prompt) ? `\n\n${PAD}` : '';
   const text = `${body}${tail}`;
-  return mode === 'replace' ? text : appendPrompt(existing, text);
+  // The box still holds this same quote (an earlier ask left it unsent):
+  // write it once, not twice.
+  const left = String(existing || '').replace(new RegExp(PAD, 'g'), '').trim();
+  if (mode === 'replace' || (left && body.startsWith(left))) return text;
+  return appendPrompt(existing, text);
 }
 
 export async function writePrompt(composer, prompt, mode = 'append', draft = readValue(composer)) {

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.24.2
-// @update-log   [20261102] v1.24.2 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.24.3
+// @update-log   [20261102] v1.24.3 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -551,7 +551,9 @@ ${prompt}` : prompt;
 
 ${PAD}` : "";
     const text = `${body}${tail}`;
-    return mode === "replace" ? text : appendPrompt(existing, text);
+    const left = String(existing || "").replace(new RegExp(PAD, "g"), "").trim();
+    if (mode === "replace" || left && body.startsWith(left)) return text;
+    return appendPrompt(existing, text);
   }
   async function writePrompt(composer, prompt, mode = "append", draft2 = readValue(composer)) {
     const next = composeValue(draft2, prompt, mode);
@@ -5653,7 +5655,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.24.2", release: "20261102" };
+  var META = { name: "Ask X", version: "1.24.3", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [

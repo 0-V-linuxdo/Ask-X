@@ -141,6 +141,10 @@ test('autoSend presses the send button', async () => {
 
 test('replace mode drops the draft', () => {
   assert.equal(composeValue('old', 'new\n\n', 'replace'), 'new\n\n​');
+  // The same quote left unsent in the box is not written a second time.
+  const quote = '来源：https://x.com/a/status/1\n\n>cribs';
+  assert.equal(composeValue(`${quote}\n\n​`, `${quote}\n\n解释一下`, 'append'), `${quote}\n\n解释一下`);
+  assert.equal(composeValue('my draft', `${quote}\n\n`, 'append'), `my draft\n\n${quote}\n\n​`);
 });
 
 test('no drawer on the page reports no-drawer', async () => {
