@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.21.4
-// @update-log   [20261025] v1.21.4 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.22.0
+// @update-log   [20261102] v1.22.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -1030,13 +1030,13 @@ ${PAD}` : "";
     const run = () => apply4(pageTheme(doc));
     run();
     const view = doc.defaultView;
-    const observer10 = typeof view?.MutationObserver === "function" ? new view.MutationObserver(run) : null;
-    observer10?.observe(doc.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
-    if (doc.body) observer10?.observe(doc.body, { attributes: true, attributeFilter: ["style", "class"] });
+    const observer11 = typeof view?.MutationObserver === "function" ? new view.MutationObserver(run) : null;
+    observer11?.observe(doc.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
+    if (doc.body) observer11?.observe(doc.body, { attributes: true, attributeFilter: ["style", "class"] });
     const media = view?.matchMedia?.("(prefers-color-scheme: dark)");
     media?.addEventListener?.("change", run);
     return () => {
-      observer10?.disconnect();
+      observer11?.disconnect();
       media?.removeEventListener?.("change", run);
     };
   }
@@ -4890,6 +4890,91 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     }
   });
 
+  // src/plugins/noLinkPrompt.js
+  var HERO = 'img[src*="/jf/grok/entry_hero"]';
+  var DONE2 = "data-askx-not-now";
+  var NOT_NOW_LABELS = ["Not now", "暂时不要", "以后再说", "暫時不要", "稍後再說"];
+  var norm = (text) => (text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  function findNotNow(root) {
+    const hero = root.querySelector?.(HERO);
+    const dialog = hero?.closest('[role="dialog"]');
+    if (!dialog) return null;
+    const buttons = [...dialog.querySelectorAll("button")].filter((b) => norm(b.textContent));
+    const labels = NOT_NOW_LABELS.map(norm);
+    const byText = buttons.find((b) => labels.includes(norm(b.textContent)));
+    if (byText) return byText;
+    const [agree, next] = buttons;
+    return next && agree.nextElementSibling === next ? next : null;
+  }
+  function press(button) {
+    const view = button.ownerDocument.defaultView;
+    const r = button.getBoundingClientRect();
+    const init = { bubbles: true, cancelable: true, composed: true, button: 0, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+    const Pointer = view.PointerEvent || view.MouseEvent;
+    const pointer = { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true };
+    button.dispatchEvent(new Pointer("pointerdown", { ...pointer, buttons: 1 }));
+    button.dispatchEvent(new view.MouseEvent("mousedown", { ...init, buttons: 1 }));
+    button.dispatchEvent(new Pointer("pointerup", pointer));
+    button.dispatchEvent(new view.MouseEvent("mouseup", init));
+    button.dispatchEvent(new view.MouseEvent("click", init));
+  }
+  function redirectPath(loc) {
+    if (!/^\/i\/jf\/grok\/entry/.test(loc.pathname)) return null;
+    try {
+      const url = new URL(new URLSearchParams(loc.search).get("redirect") || "", loc.origin);
+      return url.origin === loc.origin ? url.pathname + url.search : null;
+    } catch {
+      return null;
+    }
+  }
+  function goTo(view, path) {
+    view.history.pushState({}, "", path);
+    view.dispatchEvent(new view.PopStateEvent("popstate", { state: {} }));
+  }
+  function dismissIn(root) {
+    const button = findNotNow(root);
+    if (!button || button.hasAttribute(DONE2)) return false;
+    button.setAttribute(DONE2, "");
+    const view = button.ownerDocument.defaultView;
+    const target = redirectPath(view.location);
+    press(button);
+    if (target) {
+      view.setTimeout(() => {
+        const loc = view.location;
+        if (loc.pathname + loc.search !== target && !redirectPath(loc)) goTo(view, target);
+      }, 800);
+    }
+    return true;
+  }
+  var observer9 = null;
+  var noLinkPrompt_default = definePlugin({
+    name: "NoLinkPrompt",
+    description: "打开 Grok 时 X 弹出的“One Grok, everywhere”关联账号提示（Agree and continue / Not now），自动点 “Not now” 关掉，不会点同意。",
+    icon: ICONS.linkOff,
+    tags: ["declutter"],
+    enabledByDefault: true,
+    start() {
+      const doc = app.doc;
+      dismissIn(doc);
+      observer9 = new doc.defaultView.MutationObserver((records) => {
+        for (const record of records) {
+          for (const node2 of record.addedNodes) {
+            if (node2.nodeType !== 1) continue;
+            if (node2.matches(HERO) || node2.querySelector(HERO)) {
+              dismissIn(doc);
+              return;
+            }
+          }
+        }
+      });
+      observer9.observe(doc.getElementById("layers") || doc.body, { childList: true, subtree: true });
+    },
+    stop() {
+      observer9?.disconnect();
+      observer9 = null;
+    }
+  });
+
   // src/plugins/postGrok.js
   var POST2 = 'article[data-testid="tweet"]';
   var POST_TEXT = '[data-testid="tweetText"]';
@@ -5187,7 +5272,7 @@ ${prompt}` : "{url}";
 
   // src/plugins/noSuggestions.js
   var MARK9 = "data-askx-no-suggestions";
-  var observer9 = null;
+  var observer10 = null;
   function isSuggestionRow(node2, composer) {
     if (node2.contains(composer) || node2.querySelector('textarea, [contenteditable="true"]')) return false;
     const buttons = [...node2.querySelectorAll('button, [role="button"]')];
@@ -5212,11 +5297,11 @@ ${prompt}` : "{url}";
   }
   function onMutations(records) {
     if (!touchesGrok(records, app.doc)) return;
-    observer9.disconnect();
+    observer10.disconnect();
     try {
       hideSuggestions();
     } finally {
-      observer9.observe(app.doc.body, { childList: true, subtree: true });
+      observer10.observe(app.doc.body, { childList: true, subtree: true });
     }
   }
   var noSuggestions_default = definePlugin({
@@ -5234,12 +5319,12 @@ ${prompt}` : "{url}";
         (doc.head || doc.documentElement).appendChild(style);
       }
       hideSuggestions();
-      observer9 = new doc.defaultView.MutationObserver(onMutations);
-      observer9.observe(doc.body, { childList: true, subtree: true });
+      observer10 = new doc.defaultView.MutationObserver(onMutations);
+      observer10.observe(doc.body, { childList: true, subtree: true });
     },
     stop() {
-      observer9?.disconnect();
-      observer9 = null;
+      observer10?.disconnect();
+      observer10 = null;
       app.doc.getElementById("askx-no-suggestions")?.remove();
       for (const node2 of app.doc.querySelectorAll(`[${MARK9}]`)) node2.removeAttribute(MARK9);
     }
@@ -5362,7 +5447,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.21.4", release: "20261025" };
+  var META = { name: "Ask X", version: "1.22.0", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
@@ -5745,6 +5830,7 @@ ${prompt}` : "{url}";
     noVoiceMode_default,
     noGrokComLink_default,
     noLinkAccounts_default,
+    noLinkPrompt_default,
     settings_default
   ];
 

@@ -21,6 +21,7 @@ import menuCommands from './menuCommands.js';
 import newChat from './newChat.js';
 import noGrokComLink from './noGrokComLink.js';
 import noLinkAccounts from './noLinkAccounts.js';
+import noLinkPrompt from './noLinkPrompt.js';
 import postGrok from './postGrok.js';
 import noSideScroll from './noSideScroll.js';
 import postTypography from './postTypography.js';
@@ -40,5 +41,5 @@ export const ALL_PLUGINS = [
   grokScrollbars, noSideScroll, modelChips,
   messageNavigator, inputHistory, responseNotification, completeToast, statusBadge, grokState,
   autoRetry,
-  toasts, menuCommands, noSuggestions, hideFollowUps, noVoiceMode, noGrokComLink, noLinkAccounts, settings
+  toasts, menuCommands, noSuggestions, hideFollowUps, noVoiceMode, noGrokComLink, noLinkAccounts, noLinkPrompt, settings
 ];

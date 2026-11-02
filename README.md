@@ -23,6 +23,7 @@ npm run build        # 或在 Chat-blocker 根目录 npm run build:askx
 | Toasts | 开 | 底部结果提示（旧脚本已有） | — |
 | MenuCommands | 开 | 脚本菜单里的“问 Grok / 无痕问 Grok（当前划词）” | — |
 | NoSuggestions | 开 | 隐藏 Grok 输入框（小窗和 Grok 全页）下面那排功能提示按钮（Create Videos / Create Images / Edit Image / Latest News）；按结构识别，不依赖界面语言，不影响输入框按钮和 Private Chat 说明 | — |
+| NoLinkPrompt | 开 | 打开 Grok 时 X 弹出的“One Grok, everywhere”关联账号提示，自动点 Not now 关掉（按提示图识别，不点同意） | — |
 | Settings | 必需 | 设置界面（脚本菜单“Ask X 设置”） | — |
 
 设置界面：左侧导航（插件 / 关于），插件页有分类标签（收藏、全部、输入框、对话、隐私、通知、导航、精简、开发）、搜索框、启用状态筛选、两列插件卡片（星标收藏、置顶、调节图标打开设置、开关），必需插件排在分隔线后并变灰。默认打开“收藏”，没有收藏时打开“全部”（void++ 固定打开收藏，这里为避免第一次打开是空页面）。旧版（v1.0）的设置会自动迁移到对应插件。

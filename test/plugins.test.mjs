@@ -28,7 +28,7 @@ const sel = { text: 'hello', node: null };
 test('every feature is its own plugin with void++-style defaults', () => {
   const { manager } = setup();
   const names = manager.order;
-  assert.deepEqual(names, ['AskGrok', 'NewChat', 'Incognito', 'QuoteFormat', 'QuickPrompts', 'FollowUp', 'PostGrok', 'Markdown', 'UserQuotes', 'BetterLinks', 'PostTypography', 'CustomGreeting', 'DrawerHeight', 'ComposerOpacity', 'GrokScrollbars', 'NoSideScroll', 'ModelChips', 'MessageNavigator', 'InputHistory', 'ResponseNotification', 'CompleteToast', 'StatusBadge', 'GrokState', 'AutoRetry', 'Toasts', 'MenuCommands', 'NoSuggestions', 'HideFollowUps', 'NoVoiceMode', 'NoGrokComLink', 'NoLinkAccounts', 'Settings']);
+  assert.deepEqual(names, ['AskGrok', 'NewChat', 'Incognito', 'QuoteFormat', 'QuickPrompts', 'FollowUp', 'PostGrok', 'Markdown', 'UserQuotes', 'BetterLinks', 'PostTypography', 'CustomGreeting', 'DrawerHeight', 'ComposerOpacity', 'GrokScrollbars', 'NoSideScroll', 'ModelChips', 'MessageNavigator', 'InputHistory', 'ResponseNotification', 'CompleteToast', 'StatusBadge', 'GrokState', 'AutoRetry', 'Toasts', 'MenuCommands', 'NoSuggestions', 'HideFollowUps', 'NoVoiceMode', 'NoGrokComLink', 'NoLinkAccounts', 'NoLinkPrompt', 'Settings']);
   assert.ok(names.every((n) => manager.isEnabled(n)), 'all on by default');
   assert.equal(manager.toggle('AskGrok'), false, 'required plugins cannot be turned off');
   assert.equal(manager.isEnabled('AskGrok'), true);
@@ -130,7 +130,7 @@ test('plugin page: cards, toggle, star → favorites, config dialog, search', ()
   const { doc, manager } = setup();
   const ui = openSettings(manager, doc);
   const cards = () => [...doc.querySelectorAll('.askx-card')].map((c) => c.dataset.plugin);
-  assert.equal(cards().length, 32);
+  assert.equal(cards().length, 33);
   assert.deepEqual([...doc.querySelectorAll('.askx-card-required')].map((c) => c.dataset.plugin), ['AskGrok', 'Settings']);
 
   doc.querySelector('[data-plugin="Toasts"] [role="switch"]').click();
