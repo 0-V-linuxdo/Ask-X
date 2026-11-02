@@ -45,6 +45,8 @@ export function buildRequest(selection, trigger) {
     .filter((p) => typeof p.onAsk === 'function')
     .sort((a, b) => (a.askOrder ?? 50) - (b.askOrder ?? 50));
   for (const plugin of hooks) plugin.onAsk(ctx);
+  // A double click on the toolbar sends at once, whatever the button's own setting.
+  if (trigger?.send) ctx.plan.autoSend = true;
   // A follow-up always stays in the chat it was picked from.
   if (selection?.context === 'grok') {
     ctx.plan.newChat = false;
@@ -111,7 +113,7 @@ export default definePlugin({
   start() {
     toolbar = createToolbar({
       getButtons: toolbarButtons,
-      onAsk: (selection, button, event, prompt) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt }),
+      onAsk: (selection, button, event, prompt, options) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt, send: Boolean(options?.send) }),
       recentPrompts
     });
     unsubscribe = app.manager.subscribe(() => toolbar?.rebuild());

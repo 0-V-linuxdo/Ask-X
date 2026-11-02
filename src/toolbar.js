@@ -46,7 +46,8 @@ export function currentSelection(win = window) {
  * @param {{ getButtons: (context: 'post'|'grok') => Array<{id:string,label:string,icon?:string,text?:string,className?:string,data?:object}>,
  *           onAsk: (selection, button, event, prompt?) => void, recentPrompts?: () => string[], win?: Window }} options
  *
- * Every button also takes a double click (asks with your last prompt) and
+ * Every button also takes a double click (asks with your last prompt and
+ * sends it) and
  * a right click (a menu of recent prompts), unless it sets `prompts: false`;
  * a single click then waits DOUBLE_MS to tell the two apart.
  */
@@ -76,7 +77,7 @@ export function createToolbar({ getButtons, onAsk, recentPrompts = () => [], win
       const el = doc.createElement('button');
       el.type = 'button';
       el.className = `askx-btn ${def.className || ''}`.trim();
-      el.title = def.prompts === false ? def.label : `${def.label}（双击：用上次的提示词；右键：选最近的提示词）`;
+      el.title = def.prompts === false ? def.label : `${def.label}（双击：用上次的提示词并发送；右键：选最近的提示词）`;
       el.setAttribute('aria-label', def.label);
       el.dataset.index = String(index);
       if (def.icon) el.innerHTML = def.icon;
@@ -163,12 +164,12 @@ export function createToolbar({ getButtons, onAsk, recentPrompts = () => [], win
     event.preventDefault();
     event.stopPropagation();
   });
-  function fire(picked, def, event, prompt) {
+  function fire(picked, def, event, prompt, options) {
     lastPicked = picked.text;
     quietUntil = Date.now() + 2_000;
     hide();
     try { win.getSelection()?.removeAllRanges(); } catch {}
-    onAsk(picked, def, event, prompt);
+    onAsk(picked, def, event, prompt, options);
   }
 
   bar.addEventListener('click', (event) => {
@@ -185,7 +186,9 @@ export function createToolbar({ getButtons, onAsk, recentPrompts = () => [], win
     win.clearTimeout(pending);
     pending = 0;
     if (event.detail >= 2) {
-      fire(picked, def, event, recentPrompts()[0]);
+      // A double click sends right away (when there is a prompt to send).
+      const last = recentPrompts()[0];
+      fire(picked, def, event, last, { send: Boolean(last) });
       return;
     }
     pending = win.setTimeout(() => { pending = 0; fire(picked, def, event); }, DOUBLE_MS);

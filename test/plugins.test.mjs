@@ -67,6 +67,14 @@ test('incognito plugin: ghost button goes private, the main button closes leftov
   assert.equal(buildRequest(sel, { id: 'ask', altKey: true }).plan.privateMode, 'off');
 });
 
+test('double click: the picked prompt is sent at once', () => {
+  setup();
+  const ctx = buildRequest(sel, { id: 'ask', prompt: '解释一下', send: true });
+  assert.equal(ctx.prompt, '解释一下');
+  assert.equal(ctx.plan.autoSend, true);
+  assert.equal(buildRequest(sel, { id: 'ask', prompt: '解释一下' }).plan.autoSend, false, 'right click only fills the box');
+});
+
 test('quick prompt overrides template, private and auto-send', () => {
   const { manager } = setup();
   manager.plugins.QuickPrompts.settings.set('presets', [{ name: '总结', template: 'T {quote}', private: true, autoSend: true }]);

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.24.1
-// @update-log   [20261102] v1.24.1 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.24.2
+// @update-log   [20261102] v1.24.2 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -1198,7 +1198,7 @@ ${PAD}` : "";
         const el2 = doc.createElement("button");
         el2.type = "button";
         el2.className = `askx-btn ${def.className || ""}`.trim();
-        el2.title = def.prompts === false ? def.label : `${def.label}（双击：用上次的提示词；右键：选最近的提示词）`;
+        el2.title = def.prompts === false ? def.label : `${def.label}（双击：用上次的提示词并发送；右键：选最近的提示词）`;
         el2.setAttribute("aria-label", def.label);
         el2.dataset.index = String(index2);
         if (def.icon) el2.innerHTML = def.icon;
@@ -1277,7 +1277,7 @@ ${PAD}` : "";
       event.preventDefault();
       event.stopPropagation();
     });
-    function fire(picked, def, event, prompt) {
+    function fire(picked, def, event, prompt, options) {
       lastPicked = picked.text;
       quietUntil = Date.now() + 2e3;
       hide();
@@ -1285,7 +1285,7 @@ ${PAD}` : "";
         win.getSelection()?.removeAllRanges();
       } catch {
       }
-      onAsk(picked, def, event, prompt);
+      onAsk(picked, def, event, prompt, options);
     }
     bar2.addEventListener("click", (event) => {
       const target = event.target.closest("button");
@@ -1301,7 +1301,8 @@ ${PAD}` : "";
       win.clearTimeout(pending2);
       pending2 = 0;
       if (event.detail >= 2) {
-        fire(picked, def, event, recentPrompts2()[0]);
+        const last2 = recentPrompts2()[0];
+        fire(picked, def, event, last2, { send: Boolean(last2) });
         return;
       }
       pending2 = win.setTimeout(() => {
@@ -2281,6 +2282,7 @@ ${PAD}` : "";
     };
     const hooks = app.manager.enabledPlugins().filter((p) => typeof p.onAsk === "function").sort((a, b) => (a.askOrder ?? 50) - (b.askOrder ?? 50));
     for (const plugin of hooks) plugin.onAsk(ctx2);
+    if (trigger?.send) ctx2.plan.autoSend = true;
     if (selection?.context === "grok") {
       ctx2.plan.newChat = false;
       ctx2.plan.privateMode = "keep";
@@ -2339,7 +2341,7 @@ ${PAD}` : "";
     start() {
       toolbar = createToolbar({
         getButtons: toolbarButtons,
-        onAsk: (selection, button, event, prompt) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt }),
+        onAsk: (selection, button, event, prompt, options) => void ask(selection, { ...button, altKey: Boolean(event?.altKey), prompt, send: Boolean(options?.send) }),
         recentPrompts
       });
       unsubscribe = app.manager.subscribe(() => toolbar?.rebuild());
@@ -5651,7 +5653,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.24.1", release: "20261102" };
+  var META = { name: "Ask X", version: "1.24.2", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
