@@ -13,9 +13,7 @@ import { app } from '../app.js';
 import { addStyle } from '../grokScope.js';
 import { ICONS } from '../icons.js';
 import { findPostSource } from '../source.js';
-import { closePromptMenu, openPromptMenu } from '../ui/promptMenu.js';
 import { ask } from './askGrok.js';
-import { recentPrompts } from './inputHistory.js';
 
 const POST = 'article[data-testid="tweet"]';
 const POST_TEXT = '[data-testid="tweetText"]';
@@ -78,49 +76,16 @@ function swallow(event) {
   return true;
 }
 
-function askAbout(post, prompt) {
-  // A post without text (an image, a video) is asked about by its link.
-  const text = postText(post) || findPostSource(post).url;
-  void ask({ text, node: post, context: 'post' }, { id: 'post-grok', prompt });
-}
-
-// A double click asks with your last prompt instead of the set one, so a
-// single click waits DOUBLE_MS for a possible second one.
-const DOUBLE_MS = 250;
-let pending = 0;
-
 function onClick(event) {
   if (!swallow(event)) return;
   const post = event.target.closest(POST);
-  const view = app.doc.defaultView;
-  view.clearTimeout(pending);
-  pending = 0;
-  if (event.detail >= 2) {
-    askAbout(post, recentPrompts()[0]);
-    return;
-  }
-  if (event.detail === 0) {
-    askAbout(post); // keyboard
-    return;
-  }
-  pending = view.setTimeout(() => { pending = 0; askAbout(post); }, DOUBLE_MS);
-}
-
-// Right click: pick one of your recent prompts.
-function onContextMenu(event) {
-  const button = postGrokButton(event.target);
-  if (!button) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  const post = button.closest(POST);
-  openPromptMenu(app.doc, button, recentPrompts(), (prompt) => askAbout(post, prompt));
+  // A post without text (an image, a video) is asked about by its link.
+  const text = postText(post) || findPostSource(post).url;
+  void ask({ text, node: post, context: 'post' }, { id: 'post-grok' });
 }
 
 function onKey(event) {
-  if ((event.key === 'Enter' || event.key === ' ') && postGrokButton(event.target)) {
-    if (!swallow(event)) return;
-    askAbout(event.target.closest(POST));
-  }
+  if ((event.key === 'Enter' || event.key === ' ') && postGrokButton(event.target)) onClick(event);
 }
 
 // X's own tooltip for the button keeps opening (in #layers); its text is
@@ -175,7 +140,7 @@ const PRESS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'touchstart',
 
 export default definePlugin({
   name: 'PostGrok',
-  description: '接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；双击用上次发过的提示词，右键从最近的提示词里选；悬停提示也可以自定义；可选自动发送、无痕。',
+  description: '接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；悬停提示也可以自定义；可选自动发送、无痕。',
   icon: ICONS.quote,
   tags: ['composer'],
   enabledByDefault: true,
@@ -184,10 +149,8 @@ export default definePlugin({
   askOrder: 95,
   onAsk(ctx) {
     if (ctx.trigger.id !== 'post-grok') return;
-    // Like X's own button: the post's link is the whole context. A prompt
-    // picked with a double or right click replaces the set one.
-    const prompt = String(ctx.prompt || settings.store.prompt || '').trim();
-    ctx.prompt = '';
+    // Like X's own button: the post's link is the whole context.
+    const prompt = String(settings.store.prompt || '').trim();
     ctx.template = prompt ? `{url}\n\n${prompt}` : '{url}';
     ctx.plan.autoSend = Boolean(settings.store.autoSend);
     ctx.plan.privateMode = settings.store.private ? 'on' : 'off';
@@ -199,7 +162,6 @@ export default definePlugin({
     watchTips(doc);
     for (const type of PRESS) doc.addEventListener(type, swallow, true);
     doc.addEventListener('click', onClick, true);
-    doc.addEventListener('contextmenu', onContextMenu, true);
     doc.addEventListener('keydown', onKey, true);
   },
   stop() {
@@ -212,10 +174,6 @@ export default definePlugin({
     for (const el of doc.querySelectorAll(`[${TIP_MARK}]`)) el.removeAttribute(TIP_MARK);
     for (const type of PRESS) doc.removeEventListener(type, swallow, true);
     doc.removeEventListener('click', onClick, true);
-    doc.removeEventListener('contextmenu', onContextMenu, true);
     doc.removeEventListener('keydown', onKey, true);
-    doc.defaultView.clearTimeout(pending);
-    pending = 0;
-    closePromptMenu();
   }
 });

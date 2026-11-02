@@ -107,8 +107,7 @@ export default definePlugin({
   required: true,
   tags: ['composer'],
   askOrder: 0,
-  // Double click: quote + your last prompt; right click: pick a recent one.
-  toolbarButtons: () => [{ id: 'ask', label: '问 Grok', hint: '问 Grok（双击：带上次的提示词；右键：选最近的提示词）', icon: ICONS.quote, className: 'askx-main', order: 0, prompts: true }],
+  toolbarButtons: () => [{ id: 'ask', label: '问 Grok', icon: ICONS.quote, className: 'askx-main', order: 0 }],
   start() {
     toolbar = createToolbar({
       getButtons: toolbarButtons,

@@ -71,7 +71,9 @@ export default definePlugin({
     if (ctx.trigger.id !== 'preset') return;
     const preset = settings.store.presets[ctx.trigger.preset];
     if (!preset) return;
-    ctx.template = preset.template;
+    // A prompt picked with a double or right click replaces the preset's
+    // own wording: the quote keeps the QuoteFormat template.
+    if (!ctx.prompt) ctx.template = preset.template;
     ctx.plan.autoSend = preset.autoSend;
     if (preset.private) ctx.plan.privateMode = 'on';
   }

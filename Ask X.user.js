@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.24.0
-// @update-log   [20261102] v1.24.0 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.24.1
+// @update-log   [20261102] v1.24.1 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -733,17 +733,17 @@ ${PAD}` : "";
     return Boolean(el2?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]'));
   }
   function frameThrottle(view, fn) {
-    let pending3 = 0;
+    let pending2 = 0;
     const run = () => {
-      pending3 = 0;
+      pending2 = 0;
       fn();
     };
     const schedule7 = () => {
-      if (!pending3) pending3 = (view.requestAnimationFrame || ((f) => view.setTimeout(f, 16)))(run);
+      if (!pending2) pending2 = (view.requestAnimationFrame || ((f) => view.setTimeout(f, 16)))(run);
     };
     schedule7.cancel = () => {
-      if (pending3) (view.cancelAnimationFrame || view.clearTimeout)(pending3);
-      pending3 = 0;
+      if (pending2) (view.cancelAnimationFrame || view.clearTimeout)(pending2);
+      pending2 = 0;
     };
     return schedule7;
   }
@@ -1189,7 +1189,7 @@ ${PAD}` : "";
     let lastPicked = "";
     let quietUntil = 0;
     let timer3 = 0;
-    let pending3 = 0;
+    let pending2 = 0;
     function build2(context = builtFor) {
       builtFor = context;
       buttons = getButtons(context);
@@ -1198,7 +1198,7 @@ ${PAD}` : "";
         const el2 = doc.createElement("button");
         el2.type = "button";
         el2.className = `askx-btn ${def.className || ""}`.trim();
-        el2.title = def.hint || def.label;
+        el2.title = def.prompts === false ? def.label : `${def.label}（双击：用上次的提示词；右键：选最近的提示词）`;
         el2.setAttribute("aria-label", def.label);
         el2.dataset.index = String(index2);
         if (def.icon) el2.innerHTML = def.icon;
@@ -1219,8 +1219,8 @@ ${PAD}` : "";
       });
     }
     function hide() {
-      win.clearTimeout(pending3);
-      pending3 = 0;
+      win.clearTimeout(pending2);
+      pending2 = 0;
       closePromptMenu();
       current2 = null;
       bar2.hidden = true;
@@ -1294,18 +1294,18 @@ ${PAD}` : "";
       event.stopPropagation();
       const picked = current2;
       const def = buttons[Number(target.dataset.index)];
-      if (!def?.prompts) {
+      if (!def || def.prompts === false) {
         fire(picked, def, event);
         return;
       }
-      win.clearTimeout(pending3);
-      pending3 = 0;
+      win.clearTimeout(pending2);
+      pending2 = 0;
       if (event.detail >= 2) {
         fire(picked, def, event, recentPrompts2()[0]);
         return;
       }
-      pending3 = win.setTimeout(() => {
-        pending3 = 0;
+      pending2 = win.setTimeout(() => {
+        pending2 = 0;
         fire(picked, def, event);
       }, DOUBLE_MS);
     });
@@ -1314,7 +1314,7 @@ ${PAD}` : "";
       const def = target && buttons[Number(target.dataset.index)];
       event.preventDefault();
       event.stopPropagation();
-      if (!def?.prompts || !current2) return;
+      if (!def || def.prompts === false || !current2) return;
       const picked = current2;
       openPromptMenu(doc, target, recentPrompts2(), (prompt) => fire(picked, def, event, prompt));
     });
@@ -2335,8 +2335,7 @@ ${PAD}` : "";
     required: true,
     tags: ["composer"],
     askOrder: 0,
-    // Double click: quote + your last prompt; right click: pick a recent one.
-    toolbarButtons: () => [{ id: "ask", label: "问 Grok", hint: "问 Grok（双击：带上次的提示词；右键：选最近的提示词）", icon: ICONS.quote, className: "askx-main", order: 0, prompts: true }],
+    toolbarButtons: () => [{ id: "ask", label: "问 Grok", icon: ICONS.quote, className: "askx-main", order: 0 }],
     start() {
       toolbar = createToolbar({
         getButtons: toolbarButtons,
@@ -5231,44 +5230,14 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     event.stopImmediatePropagation();
     return true;
   }
-  function askAbout(post, prompt) {
-    const text = postText(post) || findPostSource(post).url;
-    void ask({ text, node: post, context: "post" }, { id: "post-grok", prompt });
-  }
-  var DOUBLE_MS2 = 250;
-  var pending2 = 0;
   function onClick5(event) {
     if (!swallow(event)) return;
     const post = event.target.closest(POST2);
-    const view = app.doc.defaultView;
-    view.clearTimeout(pending2);
-    pending2 = 0;
-    if (event.detail >= 2) {
-      askAbout(post, recentPrompts()[0]);
-      return;
-    }
-    if (event.detail === 0) {
-      askAbout(post);
-      return;
-    }
-    pending2 = view.setTimeout(() => {
-      pending2 = 0;
-      askAbout(post);
-    }, DOUBLE_MS2);
-  }
-  function onContextMenu(event) {
-    const button = postGrokButton(event.target);
-    if (!button) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    const post = button.closest(POST2);
-    openPromptMenu(app.doc, button, recentPrompts(), (prompt) => askAbout(post, prompt));
+    const text = postText(post) || findPostSource(post).url;
+    void ask({ text, node: post, context: "post" }, { id: "post-grok" });
   }
   function onKey(event) {
-    if ((event.key === "Enter" || event.key === " ") && postGrokButton(event.target)) {
-      if (!swallow(event)) return;
-      askAbout(event.target.closest(POST2));
-    }
+    if ((event.key === "Enter" || event.key === " ") && postGrokButton(event.target)) onClick5(event);
   }
   var TIP_MARK = "data-askx-tip";
   var STYLE_ID18 = "askx-post-grok";
@@ -5309,7 +5278,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   var PRESS = ["pointerdown", "mousedown", "pointerup", "mouseup", "touchstart", "touchend"];
   var postGrok_default = definePlugin({
     name: "PostGrok",
-    description: "接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；双击用上次发过的提示词，右键从最近的提示词里选；悬停提示也可以自定义；可选自动发送、无痕。",
+    description: "接管帖子右上角 X 自带的 Grok 按钮：点一下用你自己的提示词（默认“解释一下”）问 Grok 这条帖子，而不是 X 固定的问法；悬停提示也可以自定义；可选自动发送、无痕。",
     icon: ICONS.quote,
     tags: ["composer"],
     enabledByDefault: true,
@@ -5318,8 +5287,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     askOrder: 95,
     onAsk(ctx2) {
       if (ctx2.trigger.id !== "post-grok") return;
-      const prompt = String(ctx2.prompt || settings17.store.prompt || "").trim();
-      ctx2.prompt = "";
+      const prompt = String(settings17.store.prompt || "").trim();
       ctx2.template = prompt ? `{url}
 
 ${prompt}` : "{url}";
@@ -5333,7 +5301,6 @@ ${prompt}` : "{url}";
       watchTips(doc);
       for (const type of PRESS) doc.addEventListener(type, swallow, true);
       doc.addEventListener("click", onClick5, true);
-      doc.addEventListener("contextmenu", onContextMenu, true);
       doc.addEventListener("keydown", onKey, true);
     },
     stop() {
@@ -5346,11 +5313,7 @@ ${prompt}` : "{url}";
       for (const el2 of doc.querySelectorAll(`[${TIP_MARK}]`)) el2.removeAttribute(TIP_MARK);
       for (const type of PRESS) doc.removeEventListener(type, swallow, true);
       doc.removeEventListener("click", onClick5, true);
-      doc.removeEventListener("contextmenu", onContextMenu, true);
       doc.removeEventListener("keydown", onKey, true);
-      doc.defaultView.clearTimeout(pending2);
-      pending2 = 0;
-      closePromptMenu();
     }
   });
 
@@ -5658,7 +5621,7 @@ ${prompt}` : "{url}";
       if (ctx2.trigger.id !== "preset") return;
       const preset = settings19.store.presets[ctx2.trigger.preset];
       if (!preset) return;
-      ctx2.template = preset.template;
+      if (!ctx2.prompt) ctx2.template = preset.template;
       ctx2.plan.autoSend = preset.autoSend;
       if (preset.private) ctx2.plan.privateMode = "on";
     }
@@ -5688,7 +5651,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.24.0", release: "20261102" };
+  var META = { name: "Ask X", version: "1.24.1", release: "20261102" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
