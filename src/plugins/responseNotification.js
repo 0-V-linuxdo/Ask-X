@@ -1,13 +1,14 @@
 // Port of Void++'s ResponseNotification: when Grok finishes a reply, play a
 // chime and/or show a system notification. On X "away" means the tab is in
 // the background or the Grok drawer is minimised (you cannot see the reply).
-// While the tab is visible but the drawer is minimised, a small toast says
-// the reply is ready; clicking it opens the drawer.
+// The "reply done" toast appears only while the drawer is minimised (never
+// while Grok is on screen, even if the tab is in the background); clicking
+// it opens the drawer.
 
 import { definePlugin, definePluginSettings, OptionType } from '../api/plugins.js';
 import { app } from '../app.js';
 import { openDrawer } from '../drawer.js';
-import { isDrawerOpen, onGrokPage } from '../grok.js';
+import { isGrokShown } from '../grok.js';
 import { ICONS } from '../icons.js';
 import { watchStreams } from '../streamWatch.js';
 import { el } from '../ui/dom.js';
@@ -46,7 +47,7 @@ const settings = definePluginSettings({
   toast: {
     type: OptionType.BOOLEAN,
     label: '页面提示',
-    description: '页面可见但 Grok 小窗收起时，在页面底部提示“Grok 回复完成”，点一下展开小窗。',
+    description: '只在 Grok 小窗收起时，在页面底部提示“Grok 回复完成”，点一下展开小窗；小窗开着时不提示。',
     default: true
   },
   onlyWhenAway: {
@@ -146,7 +147,7 @@ const reveal = () => {
 
 export function isAway(doc = app.doc) {
   if (doc.hidden || doc.visibilityState === 'hidden') return true;
-  return !onGrokPage(doc) && !isDrawerOpen(doc);
+  return !isGrokShown(doc);
 }
 
 export function onStreamEnd(detail, doc = app.doc) {
@@ -154,7 +155,9 @@ export function onStreamEnd(detail, doc = app.doc) {
   const away = isAway(doc);
   const done = { sound: false, notification: false, toast: false };
   const extra = toastOptions(doc);
-  if (settings.store.toast && away && (!doc.hidden || extra?.whileHidden)) {
+  // The toast only stands in for a minimised drawer. With the drawer open
+  // the reply itself is right there (also when you come back to the tab).
+  if (settings.store.toast && !isGrokShown(doc) && (!doc.hidden || extra?.whileHidden)) {
     const toast = showToast('Grok 回复完成，点这里查看。', 'info', doc, { ...(extra || {}), onClick: reveal });
     toast.dataset.replyDone = '';
     done.toast = true;

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.24.3
-// @update-log   [20261102] v1.24.3 - Updates now come from github.com/0-V-linuxdo/Ask-X (@updateURL / @downloadURL). PostGrok: the hover tooltip on X's Grok button is yours to set (empty = your prompt).
+// @version      1.24.4
+// @update-log   [20261106] v1.24.4 - The "reply done" toast only appears while the Grok drawer is minimised, never while it is open (also with the tab in the background). Write/send toasts stay quiet when the result is already in the open drawer; errors and warnings still show.
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -91,31 +91,31 @@
     }
   }
   function definePluginSettings(def) {
-    const settings22 = {
+    const settings23 = {
       def,
       pluginName: "",
       manager: null,
       get(key) {
-        const saved = settings22.manager?.pluginData(settings22.pluginName)?.[key];
+        const saved = settings23.manager?.pluginData(settings23.pluginName)?.[key];
         const value = saved === void 0 ? void 0 : coerce(def[key], saved);
         return value === void 0 ? clone(def[key].default) : value;
       },
       set(key, value) {
         const next = coerce(def[key], value);
-        settings22.manager?.mergePluginData(settings22.pluginName, { [key]: next === void 0 ? clone(def[key].default) : next });
+        settings23.manager?.mergePluginData(settings23.pluginName, { [key]: next === void 0 ? clone(def[key].default) : next });
       },
       reset() {
-        settings22.manager?.resetPluginData(settings22.pluginName, Object.keys(def).filter((k) => !def[k].keepOnReset));
+        settings23.manager?.resetPluginData(settings23.pluginName, Object.keys(def).filter((k) => !def[k].keepOnReset));
       }
     };
-    settings22.store = new Proxy({}, {
-      get: (_, key) => typeof key === "string" && key in def ? settings22.get(key) : void 0,
+    settings23.store = new Proxy({}, {
+      get: (_, key) => typeof key === "string" && key in def ? settings23.get(key) : void 0,
       set: (_, key, value) => {
-        settings22.set(key, value);
+        settings23.set(key, value);
         return true;
       }
     });
-    return settings22;
+    return settings23;
   }
   function definePlugin(plugin) {
     return { authors: ["0_V"], tags: [], enabledByDefault: false, ...plugin, started: false };
@@ -614,6 +614,9 @@ ${PAD}` : "";
   function isDrawerOpen(doc) {
     return Boolean(getComposer(getDrawer(doc)));
   }
+  function isGrokShown(doc) {
+    return onGrokPage(doc) || isDrawerOpen(doc);
+  }
   function grokRoots(doc) {
     const roots3 = [];
     const drawer = getDrawer(doc);
@@ -985,7 +988,7 @@ ${PAD}` : "";
       return Promise.resolve("empty");
     }
     holder.dataset.state = "loading";
-    const token = Symbol("paint");
+    const token = /* @__PURE__ */ Symbol("paint");
     holder._askxPaint = token;
     return resolveIcon(value).then((dataUrl) => {
       if (holder._askxPaint !== token) return "stale";
@@ -1577,13 +1580,13 @@ ${PAD}` : "";
   function oneLine2(template) {
     return String(template || "").replace(/\s+/g, " ").trim();
   }
-  function createPresetEditor(doc, settings22, key, layer) {
+  function createPresetEditor(doc, settings23, key, layer) {
     const root = el(doc, "div", { class: "askx-presets" });
     const setEditing = (on2) => root.closest(".askx-dialog")?.classList.toggle("askx-dialog-editing", on2);
     function showList() {
       setEditing(false);
       root.textContent = "";
-      const presets = settings22.get(key);
+      const presets = settings23.get(key);
       const list = el(doc, "div", { class: "askx-prompt-list", role: "list" });
       presets.forEach((preset, index2) => {
         const remove = el(doc, "button", {
@@ -1594,8 +1597,8 @@ ${PAD}` : "";
           html: ICONS.trash,
           onclick: (e) => {
             e.stopPropagation();
-            const next = settings22.get(key).filter((_, i) => i !== index2);
-            settings22.set(key, next);
+            const next = settings23.get(key).filter((_, i) => i !== index2);
+            settings23.set(key, next);
             showList();
           }
         });
@@ -1626,7 +1629,7 @@ ${PAD}` : "";
     }
     function showEditor(index2) {
       setEditing(true);
-      const presets = settings22.get(key);
+      const presets = settings23.get(key);
       const draft2 = index2 >= 0 ? { ...presets[index2] } : { name: "", icon: "", template: "{quote}\n\n", private: false, autoSend: false };
       root.textContent = "";
       const name = el(doc, "input", { class: "askx-input", placeholder: "例如：总结", maxlength: 12, "aria-label": "名称" });
@@ -1660,10 +1663,10 @@ ${PAD}` : "";
       ]);
       save.addEventListener("click", () => {
         const next = { ...draft2, name: name.value.trim(), template: area.value };
-        const list = settings22.get(key);
+        const list = settings23.get(key);
         if (index2 >= 0) list[index2] = next;
         else list.push(next);
-        settings22.set(key, list);
+        settings23.set(key, list);
         showList();
       });
       root.append(
@@ -1697,42 +1700,42 @@ ${PAD}` : "";
   }
   var row = (doc, def, control) => el(doc, "div", { class: "askx-row" }, [label(doc, def.label, def.description), control]);
   var stacked = (doc, def, control) => el(doc, "div", { class: "askx-stacked" }, [label(doc, def.label, def.description), control]);
-  function field(doc, settings22, key, def, layer) {
-    const value = settings22.get(key);
+  function field(doc, settings23, key, def, layer) {
+    const value = settings23.get(key);
     switch (def.type) {
       case OptionType.BOOLEAN:
-        return row(doc, def, createSwitch(doc, value, (v) => settings22.set(key, v), { label: def.label }));
+        return row(doc, def, createSwitch(doc, value, (v) => settings23.set(key, v), { label: def.label }));
       case OptionType.SELECT:
-        return row(doc, def, createSelect(doc, def.options, value, (v) => settings22.set(key, v), layer));
+        return row(doc, def, createSelect(doc, def.options, value, (v) => settings23.set(key, v), layer));
       case OptionType.NUMBER: {
         const input = el(doc, "input", { type: "number", min: def.min, max: def.max, class: "askx-input askx-number", "aria-label": def.label });
         input.value = value;
         input.addEventListener("change", () => {
-          settings22.set(key, input.value);
-          input.value = settings22.get(key);
+          settings23.set(key, input.value);
+          input.value = settings23.get(key);
         });
         return row(doc, def, input);
       }
       case OptionType.SLIDER:
-        return stacked(doc, def, createSlider(doc, value, def, (v) => settings22.set(key, v)));
+        return stacked(doc, def, createSlider(doc, value, def, (v) => settings23.set(key, v)));
       case OptionType.STRING:
         if (def.multiline) {
           return stacked(doc, def, createTextArea(doc, value, (area) => {
-            settings22.set(key, area.value);
-            area.value = settings22.get(key);
+            settings23.set(key, area.value);
+            area.value = settings23.get(key);
           }, { label: def.label }));
         }
         {
           const input = el(doc, "input", { type: "text", class: "askx-input", placeholder: def.placeholder || "", spellcheck: "false", "aria-label": def.label });
           input.value = value;
           input.addEventListener("change", () => {
-            settings22.set(key, input.value);
-            input.value = settings22.get(key);
+            settings23.set(key, input.value);
+            input.value = settings23.get(key);
           });
           return stacked(doc, def, input);
         }
       case OptionType.COMPONENT:
-        if (def.component === "presets") return stacked(doc, def, createPresetEditor(doc, settings22, key, layer));
+        if (def.component === "presets") return stacked(doc, def, createPresetEditor(doc, settings23, key, layer));
         if (typeof def.component === "function") return (def.stacked ? stacked : row)(doc, def, def.component(doc, layer));
         return null;
       default:
@@ -1762,14 +1765,14 @@ ${PAD}` : "";
     return close;
   }
   function openPluginDialog(doc, layer, plugin) {
-    const settings22 = plugin.settings;
-    const entries2 = settings22 ? Object.entries(settings22.def).filter(([, d]) => !d.hidden) : [];
+    const settings23 = plugin.settings;
+    const entries2 = settings23 ? Object.entries(settings23.def).filter(([, d]) => !d.hidden) : [];
     const list = el(doc, "div", { class: "askx-settings-list" });
     const render4 = () => {
       list.textContent = "";
       if (!entries2.length) list.appendChild(el(doc, "p", { class: "askx-paragraph", text: "这个插件没有可调的设置。" }));
       for (const [key, def] of entries2) {
-        const node2 = field(doc, settings22, key, def, layer);
+        const node2 = field(doc, settings23, key, def, layer);
         if (node2) list.appendChild(node2);
       }
     };
@@ -1800,7 +1803,7 @@ ${PAD}` : "";
             description: `把 ${plugin.name} 的设置恢复为默认值？此操作无法撤销。`,
             confirmText: "重置",
             onConfirm: () => {
-              settings22.reset();
+              settings23.reset();
               render4();
             }
           })
@@ -2419,8 +2422,22 @@ ${PAD}` : "";
     "no-composer": "找不到 Grok 输入框。",
     "write-failed": "无法写入 Grok 输入框。"
   };
+  var settings2 = definePluginSettings({
+    quietWhenShown: {
+      type: OptionType.BOOLEAN,
+      label: "小窗开着时不提示成功",
+      description: "内容已经写进你眼前的 Grok 小窗时，不再弹“已写入/已发送”；出错、无痕切换失败、自动发送失败照样提示。",
+      default: true
+    }
+  });
   var off = null;
   var timer = 0;
+  var WARNINGS = ["private-unavailable", "send-failed"];
+  function needsToast({ result }, doc = app.doc, opts = settings2.store) {
+    if (!result.ok) return true;
+    if (result.notes?.some((n) => WARNINGS.includes(n))) return true;
+    return !(opts.quietWhenShown && isGrokShown(doc));
+  }
   function describe({ result, ctx: ctx2 }) {
     if (!result.ok) return { kind: "error", text: FAILURES[result.reason] || "发送到 Grok 失败。" };
     const where = result.private ? "无痕对话" : ctx2.plan.newChat && !result.followUp ? "新对话" : "当前对话";
@@ -2476,8 +2493,10 @@ ${PAD}` : "";
     icon: ICONS.bell,
     tags: ["notifications"],
     enabledByDefault: true,
+    settings: settings2,
     start() {
       off = on("askResult", (event) => {
+        if (!needsToast(event)) return;
         const { kind: kind2, text } = describe(event);
         showToast(text, kind2);
       });
@@ -2489,7 +2508,7 @@ ${PAD}` : "";
   });
 
   // src/plugins/autoRetry.js
-  var settings2 = definePluginSettings({
+  var settings3 = definePluginSettings({
     delay: {
       type: OptionType.SLIDER,
       label: "等待秒数",
@@ -2529,7 +2548,7 @@ ${PAD}` : "";
         if (!button.isConnected) return;
         button.click();
         showToast("Grok 回复出错，已自动重试一次。", "info", doc);
-      }, Math.max(1, settings2.store.delay) * 1e3);
+      }, Math.max(1, settings3.store.delay) * 1e3);
       return "scheduled";
     }
     return null;
@@ -2541,7 +2560,7 @@ ${PAD}` : "";
     icon: ICONS.retry,
     tags: ["chats"],
     enabledByDefault: true,
-    settings: settings2,
+    settings: settings3,
     start() {
       stop = watchGrok(app.doc, (doc) => check(doc));
     },
@@ -2556,7 +2575,7 @@ ${PAD}` : "";
   var HIGHLIGHT = "askx-bare-link";
   var VISITED = "askx-bare-link-visited";
   var MAX_VISITED = 500;
-  var settings3 = definePluginSettings({
+  var settings4 = definePluginSettings({
     visitedColor: {
       type: OptionType.BOOLEAN,
       label: "已访问链接变色",
@@ -2618,7 +2637,7 @@ ${PAD}` : "";
     links = collect(doc);
     const view = doc.defaultView;
     if (!view.CSS?.highlights || typeof view.Highlight !== "function") return;
-    const visited = settings3.store.visitedColor ? new Set(visitedList()) : /* @__PURE__ */ new Set();
+    const visited = settings4.store.visitedColor ? new Set(visitedList()) : /* @__PURE__ */ new Set();
     const fresh = links.filter((l) => !visited.has(l.href)).map((l) => l.range);
     const seen2 = links.filter((l) => visited.has(l.href)).map((l) => l.range);
     if (fresh.length) view.CSS.highlights.set(HIGHLIGHT, new view.Highlight(...fresh));
@@ -2668,7 +2687,7 @@ ${PAD}` : "";
     icon: ICONS.link,
     tags: ["messages"],
     enabledByDefault: true,
-    settings: settings3,
+    settings: settings4,
     onSettingsChange: () => paint(app.doc),
     start() {
       const doc = app.doc;
@@ -2801,7 +2820,7 @@ ${PAD}` : "";
   var STYLE_ID3 = "askx-grok-state";
   var STATE = "data-askx-grok-state";
   var STYLE = "data-askx-grok-style";
-  var settings4 = definePluginSettings({
+  var settings5 = definePluginSettings({
     buttonStyle: {
       type: OptionType.SELECT,
       label: "Grok 按钮样式",
@@ -2834,7 +2853,7 @@ ${PAD}` : "";
     }
   });
   function tintsButton() {
-    return Boolean(app.manager?.isEnabled?.("GrokState") && settings4.store.buttonStyle !== "none");
+    return Boolean(app.manager?.isEnabled?.("GrokState") && settings5.store.buttonStyle !== "none");
   }
   var KIND_COLOR = { rotate: "#3B82F6", done: "#22C55E", ready: "#F59E0B", error: "#EF4444" };
   var X_MARK = "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z";
@@ -2881,7 +2900,7 @@ ${PAD}` : "";
     paint2(doc);
   }
   function paintButton(doc) {
-    const style = settings4.store.buttonStyle;
+    const style = settings5.store.buttonStyle;
     const value = style !== "none" && KIND_COLOR[kind] ? kind : "";
     for (const drawer of doc.querySelectorAll(DRAWER)) {
       if (value && !getComposer(drawer)) {
@@ -2894,7 +2913,7 @@ ${PAD}` : "";
     }
   }
   function paintFavicon(doc) {
-    const href = settings4.store.favicon ? iconFor(settings4.store.faviconStyle, kind) : "";
+    const href = settings5.store.favicon ? iconFor(settings5.store.faviconStyle, kind) : "";
     let link2 = doc.getElementById(ICON_ID);
     if (!href) {
       link2?.remove();
@@ -2953,7 +2972,7 @@ ${PAD}` : "";
     icon: ICONS.tabIcon,
     tags: ["notifications"],
     enabledByDefault: true,
-    settings: settings4,
+    settings: settings5,
     start() {
       const doc = app.doc;
       kind = "wait";
@@ -2990,7 +3009,7 @@ ${PAD}` : "";
   });
 
   // src/plugins/completeToast.js
-  var settings5 = definePluginSettings({
+  var settings6 = definePluginSettings({
     keep: {
       type: OptionType.BOOLEAN,
       label: "一直显示",
@@ -3008,7 +3027,7 @@ ${PAD}` : "";
     preview: {
       type: OptionType.BOOLEAN,
       label: "回复预览",
-      description: "在提示里显示回复开头的一小段（小窗展开着才能读到）。",
+      description: "在提示里显示回复开头的一小段（X 收起小窗时会卸掉对话内容，读不到时只显示标题）。",
       default: true
     }
   });
@@ -3025,7 +3044,7 @@ ${PAD}` : "";
   }
   function toastOptions(doc = app.doc) {
     if (!app.manager?.isEnabled?.("CompleteToast")) return null;
-    const { keep, seconds, preview } = settings5.store;
+    const { keep, seconds, preview } = settings6.store;
     return {
       duration: keep ? 0 : Math.max(2, seconds) * 1e3,
       closable: true,
@@ -3035,21 +3054,21 @@ ${PAD}` : "";
     };
   }
   var stopWatch = null;
-  var wasOpen = false;
+  function dropIfShown(doc = app.doc) {
+    if (!isGrokShown(doc)) return false;
+    const toast = doc.querySelector(".askx-toast[data-reply-done]");
+    toast?.remove();
+    return Boolean(toast);
+  }
   var completeToast_default = definePlugin({
     name: "CompleteToast",
     description: "Grok“回复完成”的页面提示一直显示，直到点 × 或打开小窗；还能显示回复开头的一小段（移植自 void++）。",
     icon: ICONS.bellRing,
     tags: ["notifications"],
     enabledByDefault: true,
-    settings: settings5,
+    settings: settings6,
     start() {
-      wasOpen = isDrawerOpen(app.doc);
-      stopWatch = watchGrok(app.doc, (doc) => {
-        const open2 = isDrawerOpen(doc);
-        if (open2 && !wasOpen) doc.querySelector(".askx-toast[data-reply-done]")?.remove();
-        wasOpen = open2;
-      });
+      stopWatch = watchGrok(app.doc, dropIfShown);
     },
     stop() {
       stopWatch?.();
@@ -3060,7 +3079,7 @@ ${PAD}` : "";
   // src/plugins/composerOpacity.js
   var MARK2 = "data-askx-composer";
   var STYLE_ID4 = "askx-composer-opacity";
-  var settings6 = definePluginSettings({
+  var settings7 = definePluginSettings({
     opacity: {
       type: OptionType.SLIDER,
       label: "不透明度",
@@ -3096,7 +3115,7 @@ ${PAD}` : "";
   var observer2 = null;
   var schedule2 = null;
   function apply2(doc = app.doc) {
-    const { opacity, blur } = settings6.store;
+    const { opacity, blur } = settings7.store;
     let count = 0;
     for (const root of grokRoots(doc)) {
       const box = findComposerBox(root);
@@ -3124,7 +3143,7 @@ ${PAD}` : "";
     icon: ICONS.blend,
     tags: ["composer", "appearance"],
     enabledByDefault: true,
-    settings: settings6,
+    settings: settings7,
     start() {
       const doc = app.doc;
       if (!doc.getElementById(STYLE_ID4)) {
@@ -3162,7 +3181,7 @@ ${PAD}` : "";
     "划一段文字，问问 Grok。",
     "好问题，值得一个好答案。"
   ].join("\n");
-  var settings7 = definePluginSettings({
+  var settings8 = definePluginSettings({
     phrases: {
       type: OptionType.STRING,
       multiline: true,
@@ -3217,7 +3236,7 @@ ${PAD}` : "";
   var shownOnce = false;
   var seen = /* @__PURE__ */ new WeakSet();
   function phrases() {
-    return parsePhrases(settings7.store.phrases);
+    return parsePhrases(settings8.store.phrases);
   }
   function nextIndex(current2, count, order, random = Math.random) {
     if (count <= 1) return 0;
@@ -3236,7 +3255,7 @@ ${PAD}` : "";
   }
   function rotate() {
     const list = phrases();
-    index = nextIndex(index, list.length, settings7.store.order);
+    index = nextIndex(index, list.length, settings8.store.order);
     paint3();
   }
   function findGreeting(root) {
@@ -3270,7 +3289,7 @@ ${PAD}` : "";
     }
   }
   function onClick4(event) {
-    if (settings7.store.mode !== "manual") return;
+    if (settings8.store.mode !== "manual") return;
     if (!event.target.closest?.(`[${MARK3}]`)) return;
     event.preventDefault();
     rotate();
@@ -3285,19 +3304,19 @@ ${PAD}` : "";
         titles.add(title);
         if (!seen.has(title)) {
           seen.add(title);
-          if (shownOnce && settings7.store.mode === "refresh") index = nextIndex(index, phrases().length, settings7.store.order);
+          if (shownOnce && settings8.store.mode === "refresh") index = nextIndex(index, phrases().length, settings8.store.order);
           shownOnce = true;
         }
         const phrase = current();
         if (!title.hasAttribute(MARK3)) title.style.setProperty("--askx-greet-size", doc.defaultView.getComputedStyle(title).fontSize);
         if (title.getAttribute(MARK3) !== phrase) title.setAttribute(MARK3, phrase);
-        if (settings7.store.mode === "manual") title.setAttribute("data-askx-greet-click", "");
+        if (settings8.store.mode === "manual") title.setAttribute("data-askx-greet-click", "");
         else title.removeAttribute("data-askx-greet-click");
         painted += 1;
       }
       const composer = getComposer(root);
       if (composer && composer.tagName === "TEXTAREA") {
-        if (settings7.store.placeholder && text) {
+        if (settings8.store.placeholder && text) {
           if (!composer.hasAttribute(PH_MARK)) composer.setAttribute(PH_MARK, composer.getAttribute("placeholder") || "");
           if (composer.getAttribute("placeholder") !== current()) composer.setAttribute("placeholder", current());
         } else if (composer.hasAttribute(PH_MARK)) {
@@ -3318,7 +3337,7 @@ ${PAD}` : "";
     const view = app.doc.defaultView;
     view.clearInterval(timer2);
     timer2 = 0;
-    if (settings7.store.mode === "interval") timer2 = view.setInterval(rotate, Math.max(1, settings7.store.intervalSec) * 1e3);
+    if (settings8.store.mode === "interval") timer2 = view.setInterval(rotate, Math.max(1, settings8.store.intervalSec) * 1e3);
   }
   var customGreeting_default = definePlugin({
     name: "CustomGreeting",
@@ -3326,7 +3345,7 @@ ${PAD}` : "";
     icon: ICONS.greeting,
     tags: ["appearance"],
     enabledByDefault: true,
-    settings: settings7,
+    settings: settings8,
     start() {
       const doc = app.doc;
       if (!doc.getElementById(STYLE_ID5)) {
@@ -3335,7 +3354,7 @@ ${PAD}` : "";
         style.textContent = css();
         (doc.head || doc.documentElement).appendChild(style);
       }
-      index = settings7.store.order === "random" ? nextIndex(-1, phrases().length, "random") : 0;
+      index = settings8.store.order === "random" ? nextIndex(-1, phrases().length, "random") : 0;
       shownOnce = false;
       schedule3 = timeThrottle(doc.defaultView, () => paint3(doc), 100);
       paint3(doc);
@@ -3369,7 +3388,7 @@ ${PAD}` : "";
   var TOP_GAP = 8;
   var EDGE_GAP = 8;
   var FULL_V_GAP = 0;
-  var settings8 = definePluginSettings({
+  var settings9 = definePluginSettings({
     preset: {
       type: OptionType.SELECT,
       label: "弹窗高度",
@@ -3416,7 +3435,7 @@ ${PAD}` : "";
     if (!drawer) return 0;
     const open2 = Boolean(getComposer(drawer));
     const view = doc.defaultView;
-    const store = settings8.store;
+    const store = settings9.store;
     const rect = drawer.getBoundingClientRect();
     const shifted = parseFloat(drawer.style.getPropertyValue("--askx-drawer-shift")) || 0;
     const bottom = rect.bottom - shifted;
@@ -3462,7 +3481,7 @@ ${PAD}` : "";
     icon: ICONS.height,
     tags: ["appearance"],
     enabledByDefault: true,
-    settings: settings8,
+    settings: settings9,
     start() {
       const doc = app.doc;
       const view = doc.defaultView;
@@ -3540,7 +3559,7 @@ ${PAD}` : "";
 
   // src/plugins/followUp.js
   var DEFAULT_FOLLOW_UP = "{quote}\n\n";
-  var settings9 = definePluginSettings({
+  var settings10 = definePluginSettings({
     template: {
       type: OptionType.STRING,
       multiline: true,
@@ -3555,17 +3574,17 @@ ${PAD}` : "";
     icon: ICONS.followUp,
     tags: ["composer", "messages"],
     enabledByDefault: true,
-    settings: settings9,
+    settings: settings10,
     askOrder: 40,
     toolbarButtons: () => [{ id: "follow-up", label: "追问", icon: ICONS.followUp, className: "askx-main", contexts: ["grok"], order: 0 }],
     onAsk(ctx2) {
-      if (ctx2.trigger.id === "follow-up") ctx2.template = settings9.store.template;
+      if (ctx2.trigger.id === "follow-up") ctx2.template = settings10.store.template;
     }
   });
 
   // src/plugins/grokScrollbars.js
   var STYLE_ID7 = "askx-grok-scrollbars";
-  var settings10 = definePluginSettings({
+  var settings11 = definePluginSettings({
     width: {
       type: OptionType.SELECT,
       label: "粗细",
@@ -3577,7 +3596,7 @@ ${PAD}` : "";
       default: "thin"
     }
   });
-  function css2({ width } = settings10.store) {
+  function css2({ width } = settings11.store) {
     const scope = `${GROK}, ${GROK} *, html[${PAGE_FLAG}]`;
     if (width === "none") return `:is(${scope}){scrollbar-width:none!important}`;
     return `:is(${scope}){scrollbar-width:thin!important;scrollbar-color:rgba(128,134,139,.45) transparent!important}:is(${scope}):hover{scrollbar-color:rgba(128,134,139,.7) transparent!important}`;
@@ -3589,7 +3608,7 @@ ${PAD}` : "";
     icon: ICONS.scrollbar,
     tags: ["appearance"],
     enabledByDefault: true,
-    settings: settings10,
+    settings: settings11,
     start() {
       addStyle(app.doc, STYLE_ID7, css2());
       stop3 = watchGrok(app.doc);
@@ -3605,7 +3624,7 @@ ${PAD}` : "";
   // src/plugins/hideFollowUps.js
   var MARK5 = "data-askx-hidden-followups";
   var STYLE_ID8 = "askx-hide-followups";
-  var settings11 = definePluginSettings({
+  var settings12 = definePluginSettings({
     keepLatest: {
       type: OptionType.BOOLEAN,
       label: "保留最新消息的猜你想问",
@@ -3633,7 +3652,7 @@ ${PAD}` : "";
     }
     return out;
   }
-  function hideAll(doc = app.doc, keepLatest = settings11.store.keepLatest) {
+  function hideAll(doc = app.doc, keepLatest = settings12.store.keepLatest) {
     const hidden = /* @__PURE__ */ new Set();
     for (const root of grokRoots(doc)) {
       const blocks = findFollowUps(root);
@@ -3651,7 +3670,7 @@ ${PAD}` : "";
     icon: ICONS.eyeOff,
     tags: ["declutter"],
     enabledByDefault: true,
-    settings: settings11,
+    settings: settings12,
     onSettingsChange: () => hideAll(app.doc),
     start() {
       addStyle(app.doc, STYLE_ID8, `[${MARK5}]{display:none!important}`);
@@ -4163,7 +4182,7 @@ ${PAD}` : "";
   // src/plugins/messageNavigator.js
   var RAIL = "askx-msgnav";
   var STYLE_ID12 = "askx-nav-style";
-  var settings12 = definePluginSettings({
+  var settings13 = definePluginSettings({
     showAssistant: {
       type: OptionType.BOOLEAN,
       label: "包含 Grok 的回复",
@@ -4189,7 +4208,7 @@ ${PAD}` : "";
   var theme = "dark";
   function navMessages(root) {
     const all = getMessages(root);
-    return settings12.store.showAssistant ? all : all.filter((m) => m.role === "user");
+    return settings13.store.showAssistant ? all : all.filter((m) => m.role === "user");
   }
   function makeRail(doc, root) {
     const rail = doc.createElement("div");
@@ -4210,7 +4229,7 @@ ${PAD}` : "";
     const entry = { rail, ticks, panel, meta, list, items: [], key: "" };
     const jump = (i) => {
       const m = entry.items[i];
-      if (m) jumpTo(m, { effect: settings12.store.jumpEffect });
+      if (m) jumpTo(m, { effect: settings13.store.jumpEffect });
     };
     rail.addEventListener("click", (event) => {
       const hit = event.target.closest("[data-index]");
@@ -4353,7 +4372,7 @@ ${PAD}` : "";
     icon: ICONS.navigator,
     tags: ["navigation", "messages"],
     enabledByDefault: true,
-    settings: settings12,
+    settings: settings13,
     start() {
       const doc = app.doc;
       const view = doc.defaultView;
@@ -4383,7 +4402,7 @@ ${PAD}` : "";
       view.addEventListener("scroll", onScroll, true);
       view.addEventListener("resize", onScroll);
       refresh(doc);
-      startMessageKeys(() => !settings12.store.showAssistant);
+      startMessageKeys(() => !settings13.store.showAssistant);
     },
     onSettingsChange() {
       for (const entry of rails.values()) entry.key = "";
@@ -4418,7 +4437,7 @@ ${PAD}` : "";
   var HIDE_MENU = "data-askx-hide-model-menu";
   var HIDE_BUTTON = "data-askx-hide-model-button";
   var GAP = 6;
-  var settings13 = definePluginSettings({
+  var settings14 = definePluginSettings({
     Auto: { type: OptionType.BOOLEAN, label: "显示 Auto", description: "固定显示 Auto 按钮。", default: true },
     Fast: { type: OptionType.BOOLEAN, label: "显示 Fast", description: "固定显示 Fast 按钮。", default: true },
     Expert: { type: OptionType.BOOLEAN, label: "显示 Expert", description: "固定显示 Expert 按钮。", default: true },
@@ -4501,7 +4520,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     watchLayers(doc);
     const root = grokRoots(doc).find((r) => getComposer(r) && modelButton(r));
     const button = root && modelButton(root);
-    const shown2 = MODES.filter((m) => settings13.store[m]);
+    const shown2 = MODES.filter((m) => settings14.store[m]);
     const giveBack = () => {
       if (bar) bar.hidden = true;
       for (const el2 of doc.querySelectorAll(`[${HIDE_BUTTON}]`)) {
@@ -4543,7 +4562,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     for (const chip of bar.children) chip.setAttribute("aria-pressed", String(chip.dataset.mode === now));
     bar.hidden = false;
     const width = bar.offsetWidth;
-    const mode = settings13.store.hideMenuButton ? "replace" : "before";
+    const mode = settings14.store.hideMenuButton ? "replace" : "before";
     if (button.getAttribute(HIDE_BUTTON) !== mode) button.setAttribute(HIDE_BUTTON, mode);
     if (button.style.getPropertyValue("--askx-chips-w") !== `${width}px`) button.style.setProperty("--askx-chips-w", `${width}px`);
     const own = button.getBoundingClientRect();
@@ -4572,7 +4591,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     icon: ICONS.zap,
     tags: ["composer"],
     enabledByDefault: true,
-    settings: settings13,
+    settings: settings14,
     start() {
       const doc = app.doc;
       addStyle(doc, STYLE_ID13, CSS5);
@@ -4603,7 +4622,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   });
 
   // src/plugins/responseNotification.js
-  var settings14 = definePluginSettings({
+  var settings15 = definePluginSettings({
     sound: {
       type: OptionType.BOOLEAN,
       label: "提示音",
@@ -4636,7 +4655,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     toast: {
       type: OptionType.BOOLEAN,
       label: "页面提示",
-      description: "页面可见但 Grok 小窗收起时，在页面底部提示“Grok 回复完成”，点一下展开小窗。",
+      description: "只在 Grok 小窗收起时，在页面底部提示“Grok 回复完成”，点一下展开小窗；小窗开着时不提示。",
       default: true
     },
     onlyWhenAway: {
@@ -4714,7 +4733,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
       } catch {
       }
     }
-    const url = settings14.store.soundUrl.trim();
+    const url = settings15.store.soundUrl.trim();
     if (!url) {
       chime(c);
       return true;
@@ -4746,24 +4765,24 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   };
   function isAway(doc = app.doc) {
     if (doc.hidden || doc.visibilityState === "hidden") return true;
-    return !onGrokPage(doc) && !isDrawerOpen(doc);
+    return !isGrokShown(doc);
   }
   function onStreamEnd(detail, doc = app.doc) {
     if (detail.phase !== "end" || detail.ok === false || detail.cancelled) return null;
     const away = isAway(doc);
     const done = { sound: false, notification: false, toast: false };
     const extra = toastOptions(doc);
-    if (settings14.store.toast && away && (!doc.hidden || extra?.whileHidden)) {
+    if (settings15.store.toast && !isGrokShown(doc) && (!doc.hidden || extra?.whileHidden)) {
       const toast = showToast("Grok 回复完成，点这里查看。", "info", doc, { ...extra || {}, onClick: reveal });
       toast.dataset.replyDone = "";
       done.toast = true;
     }
-    if (settings14.store.onlyWhenAway && !away) return done;
-    if (settings14.store.sound) {
+    if (settings15.store.onlyWhenAway && !away) return done;
+    if (settings15.store.sound) {
       void playSound();
       done.sound = true;
     }
-    if (settings14.store.browserNotification && typeof GM_notification === "function") {
+    if (settings15.store.browserNotification && typeof GM_notification === "function") {
       GM_notification({ title: "Grok", text: "回复完成。", silent: true, onclick: reveal });
       done.notification = true;
     }
@@ -4775,7 +4794,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     icon: ICONS.bellRing,
     tags: ["notifications"],
     enabledByDefault: true,
-    settings: settings14,
+    settings: settings15,
     start() {
       const doc = app.doc;
       doc.addEventListener("pointerdown", unlock, true);
@@ -4793,7 +4812,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   // src/plugins/statusBadge.js
   var BADGE = "askx-status-dot";
   var STYLE_ID14 = "askx-badge-style";
-  var settings15 = definePluginSettings({
+  var settings16 = definePluginSettings({
     showStreaming: {
       type: OptionType.BOOLEAN,
       label: "回复中",
@@ -4819,7 +4838,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   var off3 = null;
   var observer7 = null;
   var schedule6 = null;
-  function visibleState(s = state, opts = settings15.store) {
+  function visibleState(s = state, opts = settings16.store) {
     if (s === "streaming" && opts.showStreaming) return "streaming";
     if (s === "done" && opts.showDone) return "done";
     if (s === "error" && opts.showError) return "error";
@@ -4872,7 +4891,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     icon: ICONS.badge,
     tags: ["notifications"],
     enabledByDefault: true,
-    settings: settings15,
+    settings: settings16,
     start() {
       const doc = app.doc;
       if (!doc.getElementById(STYLE_ID14)) {
@@ -4905,7 +4924,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   // src/plugins/incognito.js
   var LABEL_MARK = "data-askx-private-label";
   var STYLE_ID15 = "askx-private-compact";
-  var settings16 = definePluginSettings({
+  var settings17 = definePluginSettings({
     icon: {
       type: OptionType.SELECT,
       label: "按钮图标",
@@ -4936,7 +4955,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     return out;
   }
   function compact(doc) {
-    const on2 = settings16.store.compactBadge;
+    const on2 = settings17.store.compactBadge;
     const kept = /* @__PURE__ */ new Set();
     for (const root of grokRoots(doc)) {
       for (const { span, badge: badge2, text } of findPrivateLabels(root)) {
@@ -4958,12 +4977,12 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     icon: ICONS.ghost,
     tags: ["privacy"],
     enabledByDefault: true,
-    settings: settings16,
+    settings: settings17,
     askOrder: 20,
     toolbarButtons: () => [{
       id: "private",
       label: "无痕问 Grok",
-      icon: settings16.store.icon === "askx" ? ICONS.ghost : ICONS.ghostNative,
+      icon: settings17.store.icon === "askx" ? ICONS.ghost : ICONS.ghostNative,
       className: "askx-ghost",
       order: 10
     }],
@@ -5187,7 +5206,7 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   var POST2 = 'article[data-testid="tweet"]';
   var POST_TEXT = '[data-testid="tweetText"]';
   var GROK_MARK = "M12.745 20.54l10.97-8.19";
-  var settings17 = definePluginSettings({
+  var settings18 = definePluginSettings({
     prompt: {
       type: OptionType.STRING,
       multiline: true,
@@ -5247,8 +5266,8 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
   var STYLE_ID18 = "askx-post-grok";
   var CSS8 = `[${TIP_MARK}]{font-size:0!important}[${TIP_MARK}]::after{content:attr(${TIP_MARK});font-size:11px;line-height:12px;white-space:nowrap}`;
   function tooltipText() {
-    const custom = String(settings17.store.tooltip || "").trim();
-    return custom || String(settings17.store.prompt || "").trim().split("\n")[0];
+    const custom = String(settings18.store.tooltip || "").trim();
+    return custom || String(settings18.store.prompt || "").trim().split("\n")[0];
   }
   var hovered = null;
   var tips = null;
@@ -5286,17 +5305,17 @@ html[${HIDE_MENU}] [role="menu"] { opacity: 0 !important; pointer-events: none !
     icon: ICONS.quote,
     tags: ["composer"],
     enabledByDefault: true,
-    settings: settings17,
+    settings: settings18,
     // After QuickPrompts, so nothing else rewrites this request.
     askOrder: 95,
     onAsk(ctx2) {
       if (ctx2.trigger.id !== "post-grok") return;
-      const prompt = String(settings17.store.prompt || "").trim();
+      const prompt = String(settings18.store.prompt || "").trim();
       ctx2.template = prompt ? `{url}
 
 ${prompt}` : "{url}";
-      ctx2.plan.autoSend = Boolean(settings17.store.autoSend);
-      ctx2.plan.privateMode = settings17.store.private ? "on" : "off";
+      ctx2.plan.autoSend = Boolean(settings18.store.autoSend);
+      ctx2.plan.privateMode = settings18.store.private ? "on" : "off";
     },
     start() {
       const doc = app.doc;
@@ -5367,7 +5386,7 @@ ${prompt}` : "{url}";
   // src/plugins/postTypography.js
   var MARK8 = "data-askx-post-text";
   var STYLE_ID20 = "askx-post-typography";
-  var settings18 = definePluginSettings({
+  var settings19 = definePluginSettings({
     fullPage: {
       type: OptionType.BOOLEAN,
       label: "Grok 全页也生效",
@@ -5379,14 +5398,14 @@ ${prompt}` : "{url}";
     const out = [];
     const drawer = doc.querySelector(DRAWER);
     if (drawer) out.push(drawer);
-    if (settings18.store.fullPage && doc.documentElement.hasAttribute(PAGE_FLAG)) {
+    if (settings19.store.fullPage && doc.documentElement.hasAttribute(PAGE_FLAG)) {
       const main = doc.querySelector("main");
       if (main) out.push(main);
     }
     return out;
   }
   function css3() {
-    const scope = settings18.store.fullPage ? `:is(${DRAWER}, html[${PAGE_FLAG}] main)` : DRAWER;
+    const scope = settings19.store.fullPage ? `:is(${DRAWER}, html[${PAGE_FLAG}] main)` : DRAWER;
     return `${scope} [${MARK8}]{font-size:15px!important;line-height:20px!important}`;
   }
   function isLooseBody(fontSize, lineHeight) {
@@ -5434,7 +5453,7 @@ ${prompt}` : "{url}";
     icon: ICONS.type,
     tags: ["messages"],
     enabledByDefault: true,
-    settings: settings18,
+    settings: settings19,
     start() {
       const doc = app.doc;
       addStyle(doc, STYLE_ID20, css3());
@@ -5444,7 +5463,7 @@ ${prompt}` : "{url}";
     onSettingsChange() {
       const doc = app.doc;
       addStyle(doc, STYLE_ID20, css3());
-      if (!settings18.store.fullPage) for (const el2 of doc.querySelectorAll(`main [${MARK8}]`)) el2.removeAttribute(MARK8);
+      if (!settings19.store.fullPage) for (const el2 of doc.querySelectorAll(`main [${MARK8}]`)) el2.removeAttribute(MARK8);
       markAll(doc);
     },
     stop() {
@@ -5580,7 +5599,7 @@ ${prompt}` : "{url}";
     const icon2 = cleanIcon(raw.icon, name);
     return { name, icon: icon2, template, private: Boolean(raw.private), autoSend: Boolean(raw.autoSend) };
   }
-  var settings19 = definePluginSettings({
+  var settings20 = definePluginSettings({
     presets: {
       type: OptionType.COMPONENT,
       component: "presets",
@@ -5605,17 +5624,17 @@ ${prompt}` : "{url}";
     icon: ICONS.zap,
     tags: ["composer"],
     enabledByDefault: true,
-    settings: settings19,
+    settings: settings20,
     // Runs last so a preset's own template, private and auto-send win.
     askOrder: 90,
     // Inside Grok (follow-up) only the non-private presets make sense: a
     // private chat would have to start over.
-    toolbarButtons: () => settings19.store.presets.map((preset, index2) => ({
+    toolbarButtons: () => settings20.store.presets.map((preset, index2) => ({
       id: "preset",
       label: `${preset.name}${preset.private ? "（无痕）" : ""}`,
       text: preset.name,
       iconUrl: iconUrlKind(preset.icon) === "invalid" ? "" : preset.icon,
-      className: settings19.store.showLabels ? "askx-prompt" : "askx-prompt askx-icon-only",
+      className: settings20.store.showLabels ? "askx-prompt" : "askx-prompt askx-icon-only",
       data: preset.private ? { private: "true" } : {},
       preset: index2,
       contexts: preset.private ? ["post"] : ["post", "grok"],
@@ -5623,7 +5642,7 @@ ${prompt}` : "{url}";
     })),
     onAsk(ctx2) {
       if (ctx2.trigger.id !== "preset") return;
-      const preset = settings19.store.presets[ctx2.trigger.preset];
+      const preset = settings20.store.presets[ctx2.trigger.preset];
       if (!preset) return;
       if (!ctx2.prompt) ctx2.template = preset.template;
       ctx2.plan.autoSend = preset.autoSend;
@@ -5632,7 +5651,7 @@ ${prompt}` : "{url}";
   });
 
   // src/plugins/quoteFormat.js
-  var settings20 = definePluginSettings({
+  var settings21 = definePluginSettings({
     template: {
       type: OptionType.STRING,
       multiline: true,
@@ -5647,15 +5666,15 @@ ${prompt}` : "{url}";
     icon: ICONS.textQuote,
     tags: ["composer"],
     enabledByDefault: true,
-    settings: settings20,
+    settings: settings21,
     askOrder: 30,
     onAsk(ctx2) {
-      ctx2.template = settings20.store.template;
+      ctx2.template = settings21.store.template;
     }
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.24.3", release: "20261102" };
+  var META = { name: "Ask X", version: "1.24.4", release: "20261106" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [
@@ -5907,7 +5926,7 @@ ${prompt}` : "{url}";
   var QUOTE = "askx-uq";
   var MARK10 = "askx-uq-mark";
   var STYLE_ID22 = "askx-user-quotes";
-  var settings21 = definePluginSettings({
+  var settings22 = definePluginSettings({
     italic: {
       type: OptionType.BOOLEAN,
       label: "斜体",
@@ -5925,10 +5944,10 @@ ${prompt}` : "{url}";
     return [
       // One box per quote line, so the bar runs down every wrapped line.
       // min-height keeps the bar on blank lines inside a multi-paragraph quote.
-      `.${QUOTE}{display:inline-block;max-width:100%;min-height:1.3em;vertical-align:top;box-sizing:border-box;border-left:3px solid rgb(113,118,123);padding-left:8px;font-style:${settings21.store.italic ? "italic" : "inherit"}}`,
+      `.${QUOTE}{display:inline-block;max-width:100%;min-height:1.3em;vertical-align:top;box-sizing:border-box;border-left:3px solid rgb(113,118,123);padding-left:8px;font-style:${settings22.store.italic ? "italic" : "inherit"}}`,
       // The ">" stays in the text (copying keeps it) but takes no space.
       `.${MARK10}{font-size:0;line-height:0;font-style:normal;user-select:text}`,
-      settings21.store.quotes ? `.${QUOTE}-text::before{content:"\\201C"}.${QUOTE}-text::after{content:"\\201D"}` : ""
+      settings22.store.quotes ? `.${QUOTE}-text::before{content:"\\201C"}.${QUOTE}-text::after{content:"\\201D"}` : ""
     ].join("\n");
   }
   function applyStyle(doc = app.doc) {
@@ -5993,7 +6012,7 @@ ${prompt}` : "{url}";
     icon: ICONS.userQuotes,
     tags: ["messages"],
     enabledByDefault: true,
-    settings: settings21,
+    settings: settings22,
     start() {
       applyStyle();
       setTransform("quotes", transform2);

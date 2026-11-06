@@ -7,7 +7,7 @@
 
 import { definePlugin, definePluginSettings, OptionType } from '../api/plugins.js';
 import { app } from '../app.js';
-import { getMessages, grokRoots, isDrawerOpen } from '../grok.js';
+import { getMessages, grokRoots, isGrokShown } from '../grok.js';
 import { watchGrok } from '../grokScope.js';
 import { ICONS } from '../icons.js';
 
@@ -29,7 +29,7 @@ const settings = definePluginSettings({
   preview: {
     type: OptionType.BOOLEAN,
     label: '回复预览',
-    description: '在提示里显示回复开头的一小段（小窗展开着才能读到）。',
+    description: '在提示里显示回复开头的一小段（X 收起小窗时会卸掉对话内容，读不到时只显示标题）。',
     default: true
   }
 });
@@ -64,7 +64,15 @@ export function toastOptions(doc = app.doc) {
 }
 
 let stopWatch = null;
-let wasOpen = false;
+
+// Grok on screen (drawer open, or the /i/grok page) counts as reading the
+// reply: a waiting "reply done" toast goes away.
+export function dropIfShown(doc = app.doc) {
+  if (!isGrokShown(doc)) return false;
+  const toast = doc.querySelector('.askx-toast[data-reply-done]');
+  toast?.remove();
+  return Boolean(toast);
+}
 
 export default definePlugin({
   name: 'CompleteToast',
@@ -74,14 +82,7 @@ export default definePlugin({
   enabledByDefault: true,
   settings,
   start() {
-    // Opening the drawer counts as reading the reply: close a waiting
-    // "reply done" toast (only on opening, not while it simply stays open).
-    wasOpen = isDrawerOpen(app.doc);
-    stopWatch = watchGrok(app.doc, (doc) => {
-      const open = isDrawerOpen(doc);
-      if (open && !wasOpen) doc.querySelector('.askx-toast[data-reply-done]')?.remove();
-      wasOpen = open;
-    });
+    stopWatch = watchGrok(app.doc, dropIfShown);
   },
   stop() {
     stopWatch?.();

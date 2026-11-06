@@ -24,6 +24,8 @@ import { decorate as renderMarkdown, looksLikeMarkdown, undecorate as unrenderMa
 import { entries as historyEntries, pushEntry, step as historyStep } from '../src/plugins/inputHistory.js';
 import { navMessages } from '../src/plugins/messageNavigator.js';
 import { isAway, onStreamEnd } from '../src/plugins/responseNotification.js';
+import { dropIfShown } from '../src/plugins/completeToast.js';
+import { needsToast, showToast } from '../src/plugins/toasts.js';
 import { badgeState, onStream } from '../src/plugins/statusBadge.js';
 import { handleEntry, isReplyUrl, simulateStream, watchStreams } from '../src/streamWatch.js';
 
@@ -333,6 +335,56 @@ test('reply notification: toast + system notification when the drawer is minimis
   } finally {
     delete globalThis.GM_notification;
   }
+});
+
+test('reply notification: no "reply done" toast while the drawer is open, even with the tab in the background', () => {
+  // drawerPage without visible: true is a hidden tab.
+  const doc = drawerPage([USER('a'), GROK('b')], { open: true });
+  setupManager(doc);
+  const calls = [];
+  globalThis.GM_notification = (opts) => calls.push(opts);
+  try {
+    assert.equal(doc.hidden, true);
+    const done = onStreamEnd({ id: 4, phase: 'end', ok: true }, doc);
+    assert.equal(done.toast, false);
+    assert.equal(doc.querySelector('.askx-toast'), null);
+    assert.equal(done.notification, true, 'the tab is in the background: the system notification still fires');
+    const page = drawerPage([], { open: false, url: 'https://x.com/i/grok', visible: true });
+    setupManager(page);
+    assert.equal(onStreamEnd({ id: 5, phase: 'end', ok: true }, page).toast, false, 'none on the /i/grok page');
+    const closed = drawerPage([], { open: false });
+    setupManager(closed);
+    assert.equal(onStreamEnd({ id: 6, phase: 'end', ok: true }, closed).toast, true, 'minimised drawer, hidden tab: waits for you');
+  } finally {
+    delete globalThis.GM_notification;
+  }
+});
+
+test('reply notification: a waiting "reply done" toast goes once Grok is on screen', () => {
+  const closed = drawerPage([], { open: false, visible: true });
+  setupManager(closed);
+  showToast('Grok 回复完成', 'info', closed, { duration: 0 }).dataset.replyDone = '';
+  assert.equal(dropIfShown(closed), false);
+  assert.ok(closed.querySelector('.askx-toast'));
+  const open = drawerPage([], { open: true, visible: true });
+  setupManager(open);
+  showToast('Grok 回复完成', 'info', open, { duration: 0 }).dataset.replyDone = '';
+  assert.equal(dropIfShown(open), true);
+  assert.equal(open.querySelector('.askx-toast'), null);
+});
+
+test('ask toasts: a plain success into the open drawer is not announced; problems still are', () => {
+  const doc = drawerPage([], { open: true, visible: true });
+  setupManager(doc);
+  const ok = (extra = {}) => ({ result: { ok: true, sent: true, notes: [], ...extra }, ctx: { plan: {} } });
+  assert.equal(needsToast(ok(), doc), false);
+  assert.equal(needsToast(ok({ notes: ['send-failed'] }), doc), true);
+  assert.equal(needsToast(ok({ notes: ['private-unavailable'] }), doc), true);
+  assert.equal(needsToast({ result: { ok: false, reason: 'no-composer' }, ctx: {} }, doc), true);
+  assert.equal(needsToast(ok(), doc, { quietWhenShown: false }), true, 'the option turns it back on');
+  const closed = drawerPage([], { open: false, visible: true });
+  setupManager(closed);
+  assert.equal(needsToast(ok(), closed), true);
 });
 
 test('replies are detected passively from resource timing, X\u2019s fetch is left alone', () => {

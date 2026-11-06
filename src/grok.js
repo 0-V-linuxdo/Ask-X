@@ -20,6 +20,12 @@ export function isDrawerOpen(doc) {
   return Boolean(getComposer(getDrawer(doc)));
 }
 
+// Grok is on screen: the drawer is open, or this is the /i/grok page.
+// (Whether the tab itself is in the background is a separate question.)
+export function isGrokShown(doc) {
+  return onGrokPage(doc) || isDrawerOpen(doc);
+}
+
 // Every Grok surface currently showing a conversation or composer.
 export function grokRoots(doc) {
   const roots = [];

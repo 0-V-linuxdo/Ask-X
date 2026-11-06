@@ -1,6 +1,7 @@
 import { on } from '../api/events.js';
-import { definePlugin } from '../api/plugins.js';
+import { definePlugin, definePluginSettings, OptionType } from '../api/plugins.js';
 import { app } from '../app.js';
+import { isGrokShown } from '../grok.js';
 import { ICONS } from '../icons.js';
 
 const DURATION_MS = 2_600;
@@ -13,8 +14,28 @@ const FAILURES = {
   'write-failed': '无法写入 Grok 输入框。'
 };
 
+const settings = definePluginSettings({
+  quietWhenShown: {
+    type: OptionType.BOOLEAN,
+    label: '小窗开着时不提示成功',
+    description: '内容已经写进你眼前的 Grok 小窗时，不再弹“已写入/已发送”；出错、无痕切换失败、自动发送失败照样提示。',
+    default: true
+  }
+});
+
 let off = null;
 let timer = 0;
+
+// Notes worth a toast even when the result is right there in Grok.
+const WARNINGS = ['private-unavailable', 'send-failed'];
+
+// Whether an ask result needs a toast. A plain success into the Grok you
+// are looking at needs none: the drawer already shows it.
+export function needsToast({ result }, doc = app.doc, opts = settings.store) {
+  if (!result.ok) return true;
+  if (result.notes?.some((n) => WARNINGS.includes(n))) return true;
+  return !(opts.quietWhenShown && isGrokShown(doc));
+}
 
 export function describe({ result, ctx }) {
   if (!result.ok) return { kind: 'error', text: FAILURES[result.reason] || '发送到 Grok 失败。' };
@@ -69,8 +90,10 @@ export default definePlugin({
   icon: ICONS.bell,
   tags: ['notifications'],
   enabledByDefault: true,
+  settings,
   start() {
     off = on('askResult', (event) => {
+      if (!needsToast(event)) return;
       const { kind, text } = describe(event);
       showToast(text, kind);
     });
