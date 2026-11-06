@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ask X
 // @namespace    0_V userscripts/Ask X
-// @version      1.24.4
-// @update-log   [20261106] v1.24.4 - The "reply done" toast only appears while the Grok drawer is minimised, never while it is open (also with the tab in the background). Write/send toasts stay quiet when the result is already in the open drawer; errors and warnings still show.
+// @version      1.24.5
+// @update-log   [20261106] v1.24.5 - Lists in Grok replies: 4px between items instead of gaps larger than between paragraphs, a little space before and after the list, and bullets at the text edge instead of deeply indented.
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
@@ -5385,6 +5385,7 @@ ${prompt}` : "{url}";
 
   // src/plugins/postTypography.js
   var MARK8 = "data-askx-post-text";
+  var MSGS = "data-askx-msgs";
   var STYLE_ID20 = "askx-post-typography";
   var settings19 = definePluginSettings({
     fullPage: {
@@ -5406,7 +5407,17 @@ ${prompt}` : "{url}";
   }
   function css3() {
     const scope = settings19.store.fullPage ? `:is(${DRAWER}, html[${PAGE_FLAG}] main)` : DRAWER;
-    return `${scope} [${MARK8}]{font-size:15px!important;line-height:20px!important}`;
+    return `${scope} [${MARK8}]{font-size:15px!important;line-height:20px!important}` + listCss(`${scope} [${MSGS}]`);
+  }
+  function listCss(base) {
+    const L = `${base} :is(ul, ol):not(.askx-md-list)`;
+    return [
+      `${L}{margin:6px 0 8px!important;padding:0 0 0 1.4em!important;gap:0!important;list-style-position:outside!important}`,
+      `${L} :is(ul, ol){margin:4px 0 0!important}`,
+      `${L} > li{margin:0!important;padding-block:0!important}`,
+      `${L} > li + li{margin-top:4px!important}`,
+      `${L} > li > :is(p, div){margin-block:0!important;padding-block:0!important}`
+    ].join("");
   }
   function isLooseBody(fontSize, lineHeight) {
     return fontSize >= 14.5 && fontSize <= 16.5 && lineHeight / fontSize >= 1.5;
@@ -5425,6 +5436,7 @@ ${prompt}` : "{url}";
   }
   function markList(doc, list) {
     if (!list) return 0;
+    if (!list.hasAttribute(MSGS)) list.setAttribute(MSGS, "");
     const view = doc.defaultView;
     let count = 0;
     for (const el2 of list.querySelectorAll("span, div, p, li")) {
@@ -5449,7 +5461,7 @@ ${prompt}` : "{url}";
   var stop9 = null;
   var postTypography_default = definePlugin({
     name: "PostTypography",
-    description: "Grok 里的消息文字改用和 X 帖子一样的字号与行距（15px / 20px），不再有过大的行距和段距；小窗和 Grok 全页都生效，全页可单独关闭。",
+    description: "Grok 里的消息文字改用和 X 帖子一样的字号与行距（15px / 20px），不再有过大的行距和段距，列表的项距和缩进也随之收紧；小窗和 Grok 全页都生效，全页可单独关闭。",
     icon: ICONS.type,
     tags: ["messages"],
     enabledByDefault: true,
@@ -5463,7 +5475,10 @@ ${prompt}` : "{url}";
     onSettingsChange() {
       const doc = app.doc;
       addStyle(doc, STYLE_ID20, css3());
-      if (!settings19.store.fullPage) for (const el2 of doc.querySelectorAll(`main [${MARK8}]`)) el2.removeAttribute(MARK8);
+      if (!settings19.store.fullPage) {
+        for (const el2 of doc.querySelectorAll(`main [${MARK8}]`)) el2.removeAttribute(MARK8);
+        for (const el2 of doc.querySelectorAll(`main [${MSGS}]`)) el2.removeAttribute(MSGS);
+      }
       markAll(doc);
     },
     stop() {
@@ -5472,6 +5487,7 @@ ${prompt}` : "{url}";
       stop9 = null;
       doc.getElementById(STYLE_ID20)?.remove();
       for (const el2 of doc.querySelectorAll(`[${MARK8}]`)) el2.removeAttribute(MARK8);
+      for (const el2 of doc.querySelectorAll(`[${MSGS}]`)) el2.removeAttribute(MSGS);
     }
   });
 
@@ -5674,7 +5690,7 @@ ${prompt}` : "{url}";
   });
 
   // src/meta-info.js
-  var META = { name: "Ask X", version: "1.24.4", release: "20261106" };
+  var META = { name: "Ask X", version: "1.24.5", release: "20261106" };
 
   // src/ui/settingsModal.js
   var CATEGORIES = [

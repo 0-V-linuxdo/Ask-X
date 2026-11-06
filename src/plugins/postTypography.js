@@ -14,6 +14,8 @@ import { addStyle, PAGE_FLAG, watchGrok } from '../grokScope.js';
 import { ICONS } from '../icons.js';
 
 const MARK = 'data-askx-post-text';
+// On the conversation's message list, so list rules stay inside messages.
+const MSGS = 'data-askx-msgs';
 const STYLE_ID = 'askx-post-typography';
 
 const settings = definePluginSettings({
@@ -40,7 +42,24 @@ function css() {
   const scope = settings.store.fullPage ? `:is(${DRAWER}, html[${PAGE_FLAG}] main)` : DRAWER;
   // Only marked blocks are resized; text inside that inherits follows them,
   // and anything with its own smaller size (source chips, code) keeps it.
-  return `${scope} [${MARK}]{font-size:15px!important;line-height:20px!important}`;
+  return `${scope} [${MARK}]{font-size:15px!important;line-height:20px!important}` + listCss(`${scope} [${MSGS}]`);
+}
+
+// Grok spaces list items for its 28px lines, and indents them deeply. Once
+// lines are 20px that reads as a gap between items larger than the one
+// between paragraphs, and bullets far from the text above. Lists in replies
+// get post-like spacing: a small gap before and after, 4px between items,
+// and the bullet just inside the text edge. User messages (.askx-md-list)
+// have their own rules.
+export function listCss(base) {
+  const L = `${base} :is(ul, ol):not(.askx-md-list)`;
+  return [
+    `${L}{margin:6px 0 8px!important;padding:0 0 0 1.4em!important;gap:0!important;list-style-position:outside!important}`,
+    `${L} :is(ul, ol){margin:4px 0 0!important}`,
+    `${L} > li{margin:0!important;padding-block:0!important}`,
+    `${L} > li + li{margin-top:4px!important}`,
+    `${L} > li > :is(p, div){margin-block:0!important;padding-block:0!important}`
+  ].join('');
 }
 
 // Body text: about 15–16.5px with a loose (≥ 1.5) line height.
@@ -66,6 +85,7 @@ export function markAll(doc = app.doc) {
 
 function markList(doc, list) {
   if (!list) return 0;
+  if (!list.hasAttribute(MSGS)) list.setAttribute(MSGS, '');
   const view = doc.defaultView;
   let count = 0;
   for (const el of list.querySelectorAll('span, div, p, li')) {
@@ -89,7 +109,7 @@ let stop = null;
 
 export default definePlugin({
   name: 'PostTypography',
-  description: 'Grok 里的消息文字改用和 X 帖子一样的字号与行距（15px / 20px），不再有过大的行距和段距；小窗和 Grok 全页都生效，全页可单独关闭。',
+  description: 'Grok 里的消息文字改用和 X 帖子一样的字号与行距（15px / 20px），不再有过大的行距和段距，列表的项距和缩进也随之收紧；小窗和 Grok 全页都生效，全页可单独关闭。',
   icon: ICONS.type,
   tags: ['messages'],
   enabledByDefault: true,
@@ -104,7 +124,10 @@ export default definePlugin({
     const doc = app.doc;
     addStyle(doc, STYLE_ID, css());
     // Marks left on the page do nothing once the CSS is drawer-only.
-    if (!settings.store.fullPage) for (const el of doc.querySelectorAll(`main [${MARK}]`)) el.removeAttribute(MARK);
+    if (!settings.store.fullPage) {
+      for (const el of doc.querySelectorAll(`main [${MARK}]`)) el.removeAttribute(MARK);
+      for (const el of doc.querySelectorAll(`main [${MSGS}]`)) el.removeAttribute(MSGS);
+    }
     markAll(doc);
   },
   stop() {
@@ -113,5 +136,6 @@ export default definePlugin({
     stop = null;
     doc.getElementById(STYLE_ID)?.remove();
     for (const el of doc.querySelectorAll(`[${MARK}]`)) el.removeAttribute(MARK);
+    for (const el of doc.querySelectorAll(`[${MSGS}]`)) el.removeAttribute(MSGS);
   }
 });

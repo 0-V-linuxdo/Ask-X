@@ -10,7 +10,7 @@ export const METADATA = `// ==UserScript==
 // @name         ${NAME}
 // @namespace    0_V userscripts/Ask X
 // @version      ${VERSION}
-// @update-log   [${RELEASE}] v${VERSION} - The "reply done" toast only appears while the Grok drawer is minimised, never while it is open (also with the tab in the background). Write/send toasts stay quiet when the result is already in the open drawer; errors and warnings still show.
+// @update-log   [${RELEASE}] v${VERSION} - Lists in Grok replies: 4px between items instead of gaps larger than between paragraphs, a little space before and after the list, and bullets at the text edge instead of deeply indented.
 // @description  Select text on X and ask Grok in the side drawer: opens a new chat by default, can use Private Chat, with a customizable quote template and quick-prompt buttons.
 // @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
 // @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Ask-X/main/Ask%20X.user.js
